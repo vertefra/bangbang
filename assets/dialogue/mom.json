@@ -1,0 +1,9 @@
+{
+  "start": "greeting",
+  "nodes": {
+    "greeting": {
+      "line": "Helloworld!",
+      "next": null
+    }
+  }
+}

@@ -1,0 +1,9 @@
+{
+  "start": "greeting",
+  "nodes": {
+    "greeting": {
+      "line": "This town ain't big enough for the both of us.",
+      "next": null
+    }
+  }
+}

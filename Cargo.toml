@@ -1,0 +1,22 @@
+[package]
+name = "bangbang"
+version = "0.1.0"
+edition = "2021"
+
+[[bin]]
+name = "bangbang"
+path = "src/main.rs"
+
+[lib]
+name = "bangbang"
+path = "src/lib.rs"
+
+[dependencies]
+glam = "0.28"
+image = "0.25"
+hecs = "0.10"
+raw-window-handle = "0.6"
+serde = { version = "1.0", features = ["derive"] }
+serde_json = "1.0"
+softbuffer = "0.4"
+winit = "0.30"

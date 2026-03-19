@@ -1,0 +1,11 @@
+{
+  "dialogue": {
+    "panel_fill": [0.12, 0.1, 0.14],
+    "panel_border": [0.35, 0.32, 0.38],
+    "text": [0.95, 0.9, 0.85],
+    "box_height": 60,
+    "padding_x": 24,
+    "padding_y": 20,
+    "border_top_px": 2
+  }
+}
