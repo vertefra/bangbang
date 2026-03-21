@@ -1,56 +1,63 @@
 //! # BangBang — binary entry point
 //!
-//! **High-level:** Creates the ECS world, sets up the `App` (winit + softbuffer + state), and runs
-//! the event loop. The app implements `ApplicationHandler`: on first resume we create the window
-//! and softbuffer context; on `RedrawRequested` we update state, draw to the buffer, present; on
+//! **High-level:** Creates the ECS world, sets up the `App` (winit + wgpu + state), and runs the
+//! event loop. On first resume we create the window and [`bangbang::gpu::GpuRenderer`]; on
+//! `RedrawRequested` we resize if needed, update state, render with the GPU, present; on
 //! `about_to_wait` we request another redraw for continuous animation.
 
-use bangbang::{assets, ecs, map, map_loader, software, state, ui};
-use hecs::World;
-use softbuffer::{Context, Surface};
-use state::{AppState, InputState, StoryState};
 use std::num::NonZeroU32;
+use std::sync::Arc;
 use std::time::Instant;
+
+use bangbang::{assets, ecs, map, map_loader, render_settings, skills, state};
+use bangbang::render;
+use bangbang::ui::{self, BackpackPanelLines};
+use hecs::World;
+use state::{AppState, InputState, WorldState};
 use winit::application::ApplicationHandler;
-use winit::event::WindowEvent;
+use winit::event::{Modifiers, WindowEvent};
 use winit::event_loop::ActiveEventLoop;
 use winit::window::Window;
 
-/// Application state owned by the event loop. **Rust:** We use `Option<T>` for window and context
-/// because they don't exist until the first `resumed`; the event loop drives when that happens.
 struct App {
-    window: Option<Window>,
-    softbuffer_context: Option<Context<winit::event_loop::OwnedDisplayHandle>>,
+    gpu: Option<bangbang::gpu::GpuRenderer>,
     world: World,
     app_state: AppState,
     input: InputState,
-    story_state: StoryState,
+    story_state: WorldState,
     last_frame: Option<Instant>,
+    #[cfg(feature = "debug")]
+    fps_smoothed: f32,
     tilemap: Option<map::Tilemap>,
+    tileset: Option<assets::LoadedSheet>,
     asset_store: assets::AssetStore,
     ui_theme: ui::UiTheme,
+    dialogue_cache: bangbang::dialogue::ConversationCache,
+    skill_registry: skills::SkillRegistry,
+    render_scale: render::RenderScale,
+    ui_scale: render::UiScale,
+    window_width: u32,
+    window_height: u32,
+    modifiers: Modifiers,
+    backpack_lines: Option<BackpackPanelLines>,
 }
 
-/// **Rust: `impl Trait for Type`** = implement the `ApplicationHandler` trait for `App`. The event loop
-/// calls these methods; we must provide the required functions. This is like implementing an interface.
 impl ApplicationHandler for App {
-    /// Called when the app becomes active (e.g. first run). We create the window and softbuffer context once.
     fn resumed(&mut self, event_loop: &ActiveEventLoop) {
-        if self.window.is_some() {
+        if self.gpu.is_some() {
             return;
         }
         let attrs = Window::default_attributes()
             .with_title("BangBang")
-            .with_inner_size(winit::dpi::LogicalSize::new(800.0, 600.0));
-        let window = event_loop.create_window(attrs).expect("create window");
-        let display_handle = event_loop.owned_display_handle();
-        let context = Context::new(display_handle).expect("softbuffer context");
-        self.window = Some(window);
-        self.softbuffer_context = Some(context);
+            .with_inner_size(winit::dpi::LogicalSize::new(
+                self.window_width as f64,
+                self.window_height as f64,
+            ));
+        let window = Arc::new(event_loop.create_window(attrs).expect("create window"));
+        let gpu = bangbang::gpu::GpuRenderer::new(window).expect("wgpu renderer");
+        self.gpu = Some(gpu);
     }
 
-    /// Handle window events: close, resize, redraw, keyboard. **Rust:** `match event { ... }` exhaustively
-    /// matches on the enum; `_ => {}` catches the rest. `let Some(ref x) = self.foo else { return };` = early return if None.
     fn window_event(
         &mut self,
         event_loop: &ActiveEventLoop,
@@ -61,75 +68,140 @@ impl ApplicationHandler for App {
             WindowEvent::CloseRequested => event_loop.exit(),
             WindowEvent::Resized(_) => {}
             WindowEvent::RedrawRequested => {
-                let Some(ref context) = self.softbuffer_context else { return };
-                let Some(ref window) = self.window else { return };
-                let mut surface = Surface::new(context, window).expect("softbuffer surface");
-                let size = window.inner_size();
-                let (Some(w), Some(h)) = (
-                    NonZeroU32::new(size.width),
-                    NonZeroU32::new(size.height),
-                ) else { return };
-                surface.resize(w, h).expect("surface resize");
-
-                // Delta time: replace last_frame with now(), use elapsed of previous or 1/60.
                 let dt = self
                     .last_frame
                     .replace(Instant::now())
                     .map(|t| t.elapsed().as_secs_f32())
                     .unwrap_or(1.0 / 60.0);
-                let tilemap = self.tilemap.as_ref().unwrap();
-                self.app_state.update(&mut self.world, &mut self.input, &mut self.story_state, dt, tilemap);
 
-                let mut buffer = surface.buffer_mut().expect("buffer");
-                let width = buffer.width();
-                let height = buffer.height();
-                let dialogue = self.app_state.dialogue_message();
-                software::draw(
-                    &mut *buffer,
-                    width,
-                    height,
-                    tilemap,
-                    &self.world,
-                    dialogue.as_deref(),
-                    &mut self.asset_store,
-                    &self.ui_theme,
-                );
-                buffer.present().expect("present");
+                self.update(dt);
+
+                let Some(ref mut gpu) = self.gpu else { return };
+
+                let size = gpu.window().inner_size();
+                let (Some(w), Some(h)) = (
+                    NonZeroU32::new(size.width),
+                    NonZeroU32::new(size.height),
+                ) else { return };
+                gpu.resize(w.get(), h.get());
+
+                #[cfg(feature = "debug")]
+                {
+                    let inst = 1.0 / dt.max(1e-6);
+                    self.fps_smoothed = self.fps_smoothed * 0.9 + inst * 0.1;
+                }
+
+                let dialogue = self.app_state.dialogue_message(&mut self.dialogue_cache);
+                let backpack_open = match self.app_state {
+                    AppState::Overworld { backpack_open, .. } => backpack_open,
+                    _ => false,
+                };
+                
+                #[cfg(feature = "debug")]
+                let fps_overlay = Some(self.fps_smoothed);
+                #[cfg(not(feature = "debug"))]
+                let fps_overlay: Option<f32> = None;
+
+
+                gpu
+                    .draw_frame(
+                        self.tilemap.as_ref().unwrap(),
+                        self.tileset.as_ref(),
+                        &self.world,
+                        dialogue.as_deref(),
+                        backpack_open,
+                        &self.skill_registry,
+                        &mut self.asset_store,
+                        &self.ui_theme,
+                        fps_overlay,
+                        self.render_scale,
+                        self.ui_scale.0,
+                        self.backpack_lines.as_ref(),
+                    )
+                    .expect("gpu draw");
+            }
+            WindowEvent::ModifiersChanged(m) => {
+                self.modifiers = m;
             }
             WindowEvent::KeyboardInput { event, .. } => {
-                self.input.apply_key(&event);
+                self.input.apply_key_with_modifiers(&event, &self.modifiers);
             }
             _ => {}
         }
     }
 
-    /// Before the loop waits for events, request a redraw so we keep animating.
     fn about_to_wait(&mut self, _event_loop: &ActiveEventLoop) {
-        if let Some(ref window) = self.window {
-            window.request_redraw();
+        if let Some(ref gpu) = self.gpu {
+            gpu.window().request_redraw();
         }
     }
 }
 
-/// **Rust:** `main` is the program entry. We construct the world, run `setup_world`, build `App`, then
-/// `run_app` blocks until the loop exits (e.g. on close). `run_app` takes `&mut app` so it can call
-/// the `ApplicationHandler` methods with `&mut self`.
+impl App {
+    fn update(&mut self, dt: f32) {
+        let tilemap = self.tilemap.as_ref().unwrap();
+        self.app_state.update(
+            &mut self.world,
+            &mut self.input,
+            &mut self.story_state,
+            dt,
+            tilemap,
+            &self.skill_registry,
+            &mut self.dialogue_cache,
+        );
+        
+        self.backpack_lines = if let AppState::Overworld { backpack_open: true, .. } = self.app_state {
+            Some(bangbang::ui::backpack_panel_lines(&self.world, &self.skill_registry))
+        } else {
+            None
+        };
+    }
+}
+
 fn main() {
-    let map_data = map_loader::load_map("intro");
+    env_logger::init();
+    
+    let render_settings = render_settings::load()
+        .expect("failed to load assets/config.json");
+    
+    let map_data = map_loader::load_map("intro")
+        .expect("failed to load intro map (assets/maps/intro.map/)");
+        
+    map_loader::log_startup_tilemap_diagnostics(&map_data);
+    
     let mut world = World::new();
     ecs::setup_world(&mut world, &map_data);
+    
+    let skill_registry = skills::SkillRegistry::load_builtins()
+        .expect("load assets/skills/*.json");
+        
+    skills::seed_demo_backpack(&mut world, &skill_registry)
+        .expect("seed backpack");
+
+    let ui_theme = ui::load_theme()
+        .expect("failed to load assets/ui/theme.json");
 
     let mut app = App {
-        window: None,
-        softbuffer_context: None,
+        gpu: None,
         world,
         app_state: AppState::default(),
         input: InputState::default(),
-        story_state: StoryState::default(),
+        story_state: WorldState::default(),
         last_frame: None,
+        #[cfg(feature = "debug")]
+        fps_smoothed: 60.0,
         tilemap: Some(map_data.tilemap),
+        tileset: map_data.tileset,
         asset_store: assets::AssetStore::new(),
-        ui_theme: ui::load_theme(),
+        ui_theme,
+        dialogue_cache: bangbang::dialogue::ConversationCache::new(),
+        skill_registry,
+        render_scale: render::RenderScale(render_settings.render_scale),
+        ui_scale: render::UiScale(render_settings.ui_scale),
+        window_width: render_settings.window_width,
+        window_height: render_settings.window_height,
+        modifiers: Modifiers::default(),
+        backpack_lines: None,
     };
 
     let event_loop = winit::event_loop::EventLoop::new().expect("event loop");

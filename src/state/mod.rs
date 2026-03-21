@@ -6,8 +6,8 @@
 pub mod app;
 pub mod input;
 pub mod overworld;
-pub mod story;
+pub mod world;
 
 pub use app::AppState;
 pub use input::InputState;
-pub use story::StoryState;
+pub use world::WorldState;

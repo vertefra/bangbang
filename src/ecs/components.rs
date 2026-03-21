@@ -1,7 +1,7 @@
 //! # ECS components
 //!
 //! **High-level:** Components are the "data" attached to entities in the ECS (Entity-Component-System)
-//! model. Types: `Transform` (position/scale), `Sprite` (color), `Player` (marker), `Npc` (id, dialogue_line),
+//! model. Types: `Transform` (position/scale), `Sprite` (color), `Player` (marker), `Npc` (id, conversation_id),
 //! `Facing` (Direction for sprite row), `Direction`, `AnimationKind`, `AnimationState` (idle/walk, frame, timer).
 //! The `hecs` crate stores these on entities; systems query by component type.
 
@@ -66,12 +66,11 @@ pub struct Player;
 // Npc
 // -----------------------------------------------------------------------------
 
-/// Static NPC that shows dialogue when the player approaches. conversation_id keys into assets/dialogue/{id}.json; dialogue_line is fallback when file missing.
+/// Static NPC that shows dialogue when the player approaches. conversation_id keys into assets/dialogue/{id}.json.
 #[derive(Debug, Clone)]
 pub struct Npc {
     pub id: String,
     pub conversation_id: String,
-    pub dialogue_line: String,
 }
 
 // -----------------------------------------------------------------------------
@@ -121,6 +120,46 @@ impl Default for AnimationState {
             kind: AnimationKind::Idle,
             frame_index: 0,
             timer: 0.0,
+        }
+    }
+}
+
+// -----------------------------------------------------------------------------
+// Health (HP for skill / combat resolution)
+// -----------------------------------------------------------------------------
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct Health {
+    pub current: i32,
+    pub max: i32,
+}
+
+// -----------------------------------------------------------------------------
+// Backpack (inventory for Usable / Permanent skills)
+// -----------------------------------------------------------------------------
+
+/// One usable skill id and remaining charges.
+#[derive(Debug, Clone)]
+pub struct UsableSkillStack {
+    pub skill_id: String,
+    pub charges: u32,
+}
+
+/// Skill ids for permanent vs usable stacks + equipped weapon id. Populated from data + [`crate::skills::seed_demo_backpack`].
+#[derive(Debug, Clone)]
+pub struct Backpack {
+    pub usable: Vec<UsableSkillStack>,
+    pub permanent: Vec<String>,
+    /// Permanent skill id with `subcategory == "weapon"` used for hotkey **1** when backpack is open.
+    pub equipped_weapon_id: Option<String>,
+}
+
+impl Default for Backpack {
+    fn default() -> Self {
+        Self {
+            usable: Vec::new(),
+            permanent: Vec::new(),
+            equipped_weapon_id: None,
         }
     }
 }

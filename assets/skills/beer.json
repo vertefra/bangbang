@@ -1,0 +1,10 @@
+{
+  "id": "beer",
+  "name": "Beer",
+  "category": "usable",
+  "subcategory": "consumable",
+  "charges_default": 3,
+  "effects": [
+    { "op": "heal", "target": "caster", "amount": 3 }
+  ]
+}

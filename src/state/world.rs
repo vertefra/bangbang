@@ -1,20 +1,14 @@
-//! # Story state
-//!
-//! Global storyline evolution: path (archetype choice) and arbitrary flags.
-//! Data-driven: path is a string id so new paths can be added in content without code changes.
-
-use std::collections::HashSet;
-
 /// Global story state. None path = neutral (no archetype chosen yet).
+use std::collections::HashSet;
 #[derive(Debug, Default)]
-pub struct StoryState {
+pub struct WorldState {
     /// Chosen archetype path, e.g. "bandit", "sheriff", "renegade". None = neutral.
     path: Option<String>,
     /// Arbitrary progress flags, e.g. "met_sheriff", "chose_bandit", "intro_done".
     flags: HashSet<String>,
 }
 
-impl StoryState {
+impl WorldState {
     pub fn new() -> Self {
         Self::default()
     }

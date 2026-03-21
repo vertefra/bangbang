@@ -1,0 +1,9 @@
+{
+  "id": "sidearm",
+  "name": "Sidearm",
+  "category": "permanent",
+  "subcategory": "weapon",
+  "effects": [
+    { "op": "deal_damage", "target": "opponent", "amount": 2 }
+  ]
+}

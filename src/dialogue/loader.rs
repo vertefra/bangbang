@@ -2,8 +2,9 @@
 
 use super::Conversation;
 
+use crate::paths;
 fn assets_dialogue_dir() -> std::path::PathBuf {
-    std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("assets").join("dialogue")
+    paths::asset_root().join("dialogue")
 }
 
 /// Load conversation by id from assets/dialogue/{id}.json. Returns None if file missing or invalid.

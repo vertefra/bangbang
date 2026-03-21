@@ -10,10 +10,15 @@
 
 pub mod assets;
 pub mod config;
+pub mod constants;
 pub mod dialogue;
 pub mod ecs;
+pub mod gpu;
 pub mod map;
 pub mod map_loader;
-pub mod software;
+pub mod paths;
+pub mod render;
+pub mod render_settings;
+pub mod skills;
 pub mod state;
 pub mod ui;

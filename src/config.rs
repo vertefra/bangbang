@@ -19,11 +19,9 @@ pub struct CharacterNpcConfig {
     pub scale: [f32; 2],
     #[serde(default = "default_color")]
     pub color: [f32; 4],
-    /// Conversation id for assets/dialogue/{id}.json. If absent, NPC id is used and dialogue_line is fallback.
+    /// Conversation id for assets/dialogue/{id}.json. If absent, NPC id is used.
     #[serde(default)]
     pub conversation_id: Option<String>,
-    #[serde(default)]
-    pub dialogue_line: String,
 }
 
 /// Merged NPC config: position from map, rest from character. Used at runtime.
@@ -32,9 +30,8 @@ pub struct NpcConfig {
     pub position: [f32; 2],
     pub scale: [f32; 2],
     pub color: [f32; 4],
-    /// Conversation id (from config or NPC id). dialogue_line is fallback when no conversation file.
+    /// Conversation id (from config or NPC id).
     pub conversation_id: String,
-    pub dialogue_line: String,
 }
 
 fn default_scale() -> [f32; 2] {

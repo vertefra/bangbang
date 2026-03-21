@@ -8,9 +8,9 @@
 use crate::ecs::{AnimationKind, AnimationState, Direction, Facing, Npc, Player, Transform, World};
 use crate::map::Tilemap;
 use crate::state::InputState;
+use crate::constants::NPC_INTERACT_RANGE;
 
 const PLAYER_SPEED: f32 = 200.0;
-const INTERACT_DISTANCE: f32 = 23.0;
 const WALK_FRAMES: u32 = 4;
 const WALK_FPS: f32 = 8.0;
 
@@ -28,15 +28,22 @@ fn direction_from_vec2(v: glam::Vec2) -> Direction {
     }
 }
 
+/// Represents an interaction with an NPC in the overworld.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct NpcInteraction {
+    pub npc_id: String,
+    pub conversation_id: String,
+}
+
 /// Overworld update: apply movement and tilemap collision to the player.
-/// Returns `(trigger, near_npc)`: trigger is `Some((npc_id, conversation_id, fallback_line))` when player is in range of an NPC,
+/// Returns `(trigger, near_npc)`: trigger is `Some(NpcInteraction)` when player is in range of an NPC,
 /// near_npc is true when player is in range this frame (caller uses this to avoid re-triggering after closing dialogue).
 pub fn update(
     world: &mut World,
     input: &InputState,
     dt: f32,
     tilemap: &Tilemap,
-) -> (Option<(String, String, String)>, bool) {
+) -> (Option<NpcInteraction>, bool) {
     let dir = input.direction();
     for (_e, (_, transform, facing, anim)) in world.query_mut::<(
         &Player,
@@ -67,14 +74,13 @@ pub fn update(
     let mut trigger = None;
     for (_, (npc, transform)) in world.query::<(&Npc, &Transform)>().iter() {
         let d = player_pos.distance(transform.position);
-        if d <= INTERACT_DISTANCE {
+        if d <= NPC_INTERACT_RANGE {
             near_npc = true;
             trigger.get_or_insert_with(|| {
-                (
-                    npc.id.clone(),
-                    npc.conversation_id.clone(),
-                    npc.dialogue_line.clone(),
-                )
+                NpcInteraction {
+                    npc_id: npc.id.clone(),
+                    conversation_id: npc.conversation_id.clone(),
+                }
             });
             break;
         }

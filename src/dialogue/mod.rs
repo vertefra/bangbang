@@ -8,7 +8,37 @@ mod tree;
 
 pub use tree::{Branch, Conversation, Node};
 
-use crate::state::StoryState;
+use crate::state::WorldState;
+use std::collections::HashMap;
+
+/// Cache for loaded conversations to avoid redundant IO.
+#[derive(Debug, Default)]
+pub struct ConversationCache {
+    cache: HashMap<String, Conversation>,
+}
+
+impl ConversationCache {
+    pub fn new() -> Self {
+        Self::default()
+    }
+
+    pub fn get_or_load(&mut self, id: &str) -> Option<&Conversation> {
+        if !self.cache.contains_key(id) {
+            if let Some(conv) = loader::load(id) {
+                self.cache.insert(id.to_string(), conv);
+            }
+        }
+        self.cache.get(id)
+    }
+
+    pub fn get_or_load_fallback(&mut self, id: &str, fallback: &str) -> &Conversation {
+        if !self.cache.contains_key(id) {
+            let conv = loader::load_or_fallback(id, fallback);
+            self.cache.insert(id.to_string(), conv);
+        }
+        self.cache.get(id).unwrap()
+    }
+}
 
 /// Result of advancing dialogue: next node, line index within that node, and whether conversation ended.
 #[derive(Debug)]
@@ -44,14 +74,14 @@ pub fn current_display<'a>(
 }
 
 /// Apply effect string to story state. Format: "set_flag:name" or "set_path:name".
-fn apply_effect(effect: &str, story: &mut StoryState) {
+fn apply_effect(effect: &str, world_state: &mut WorldState) {
     let effect = effect.trim();
     if let Some(flag) = effect.strip_prefix("set_flag:") {
-        story.set_flag(flag.trim());
+        world_state.set_flag(flag.trim());
         return;
     }
     if let Some(path) = effect.strip_prefix("set_path:") {
-        story.choose_path(path.trim());
+        world_state.choose_path(path.trim());
     }
 }
 
@@ -61,7 +91,7 @@ pub fn advance(
     conv: &Conversation,
     node_id: &str,
     line_index: u32,
-    story: &mut StoryState,
+    world_state: &mut WorldState,
 ) -> AdvanceResult {
     let count = conv.line_count(node_id) as u32;
     if line_index + 1 < count {
@@ -82,9 +112,9 @@ pub fn advance(
         }
     };
     for effect in &node.effects {
-        apply_effect(effect, story);
+        apply_effect(effect, world_state);
     }
-    let next_id = node.resolve_next(story);
+    let next_id = node.resolve_next(world_state);
     match next_id {
         Some(id) => AdvanceResult {
             node_id: id,

@@ -7,7 +7,9 @@
 use hecs::World;
 
 use crate::map_loader::MapData;
-use super::components::{AnimationState, Facing, Npc, Player, Sprite, SpriteSheet, Transform};
+use super::components::{
+    AnimationState, Backpack, Facing, Health, Npc, Player, Sprite, SpriteSheet, Transform,
+};
 
 /// Spawn player at map's player_start and NPCs from map data.
 pub fn setup_world(world: &mut World, map_data: &MapData) {
@@ -25,6 +27,8 @@ pub fn setup_world(world: &mut World, map_data: &MapData) {
         },
         Facing::default(),
         AnimationState::default(),
+        Backpack::default(),
+        Health { current: 10, max: 10 },
     ));
 
     for (character_id, npc) in &map_data.npcs {
@@ -32,7 +36,6 @@ pub fn setup_world(world: &mut World, map_data: &MapData) {
             Npc {
                 id: character_id.clone(),
                 conversation_id: npc.conversation_id.clone(),
-                dialogue_line: npc.dialogue_line.clone(),
             },
             Transform {
                 position: glam::Vec2::from_array(npc.position),
@@ -45,6 +48,7 @@ pub fn setup_world(world: &mut World, map_data: &MapData) {
                 character_id: character_id.clone(),
             },
             Facing::default(),
+            Health { current: 10, max: 10 },
         ));
     }
 }

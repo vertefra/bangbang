@@ -68,12 +68,12 @@ impl Conversation {
 
 impl Node {
     /// First matching branch for the given story state. Condition format: "flag:name" or "path:name".
-    pub fn resolve_next(&self, story: &crate::state::StoryState) -> Option<String> {
+    pub fn resolve_next(&self, world_state: &crate::state::WorldState) -> Option<String> {
         if let Some(ref next) = self.next {
             return Some(next.clone());
         }
         for branch in &self.branches {
-            if branch.matches(story) {
+            if branch.matches(world_state) {
                 return Some(branch.next.clone());
             }
         }
@@ -82,7 +82,7 @@ impl Node {
 }
 
 impl Branch {
-    fn matches(&self, story: &crate::state::StoryState) -> bool {
+    fn matches(&self, world_state: &crate::state::WorldState) -> bool {
         let cond = match &self.condition {
             Some(c) => c,
             None => return true,
@@ -92,10 +92,10 @@ impl Branch {
             return true;
         }
         if let Some(flag) = cond.strip_prefix("flag:") {
-            return story.has_flag(flag.trim());
+            return world_state.has_flag(flag.trim());
         }
         if let Some(path) = cond.strip_prefix("path:") {
-            return story
+            return world_state
                 .path()
                 .map(|p| p == path.trim())
                 .unwrap_or(false);
