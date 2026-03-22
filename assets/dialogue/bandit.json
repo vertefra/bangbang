@@ -1,4 +1,6 @@
 {
+  "require_state": null,
+  "default_line": "...",
   "start": "greeting",
   "nodes": {
     "greeting": {

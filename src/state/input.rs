@@ -66,7 +66,9 @@ impl InputState {
                 KeyCode::ArrowDown | KeyCode::KeyS => self.down = pressed,
                 KeyCode::ArrowLeft | KeyCode::KeyA => self.left = pressed,
                 KeyCode::ArrowRight | KeyCode::KeyD => self.right = pressed,
-                KeyCode::Space | KeyCode::Enter => self.confirm_pressed = self.confirm_pressed || pressed,
+                KeyCode::Space | KeyCode::Enter => {
+                    self.confirm_pressed = self.confirm_pressed || pressed
+                }
                 KeyCode::KeyB => self.backpack_pressed = self.backpack_pressed || pressed,
                 KeyCode::Digit1
                 | KeyCode::Digit2

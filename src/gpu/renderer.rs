@@ -1,4 +1,4 @@
-//! wgpu 2D textured-quad renderer: tilemap, sprites, UI panels, bitmap text.
+//! wgpu 2D textured-quad renderer: tilemap, sprites, UI panels, vector UI text (`fontdue` + atlas).
 
 use std::collections::{BTreeMap, HashMap};
 use std::sync::Arc;
@@ -6,18 +6,24 @@ use std::sync::Arc;
 use wgpu::util::DeviceExt;
 use winit::window::Window;
 
-use crate::assets::{AssetStore, LoadedSheet};
+use crate::assets::{dialogue_portrait_asset_key, AssetStore, LoadedSheet};
 use crate::ecs::{
-    AnimationKind, AnimationState, Facing, Player, Sprite, SpriteSheet, Transform, World,
-};
-use crate::map::Tilemap;
-use crate::skills::SkillRegistry;
-use crate::render::{
-    self, build_font_atlas_rgba, facing_sprite_row, tilemap_is_binary_collision_only,
-    wang_wall_sheet_index, RenderScale,
+    AnimationKind, AnimationState, Direction, Facing, Player, Sprite, SpriteSheet, Transform, World,
 };
 use crate::gpu::color::{packed_rgb_to_linear, sprite_color_to_linear};
+use crate::gpu::text_atlas::{TextQuad, UiFontAtlas, UI_FONT_ATLAS_DIM};
+use crate::map::Tilemap;
+use crate::render::{
+    self, facing_sprite_row, tilemap_is_binary_collision_only, wang_wall_sheet_index, RenderScale,
+};
 use crate::ui::{layout, UiTheme};
+
+/// Developer HUD when built with `--features debug`: smoothed FPS plus lines built in `main` (world position, tile grid, palette properties).
+#[derive(Clone, Debug)]
+pub struct DebugOverlay {
+    pub fps: f32,
+    pub lines: Vec<String>,
+}
 
 #[repr(C)]
 #[derive(Clone, Copy, Debug, bytemuck::Pod, bytemuck::Zeroable)]
@@ -51,6 +57,9 @@ pub struct GpuRenderer {
     sampler: wgpu::Sampler,
     white: TextureBind,
     font: TextureBind,
+    font_texture: wgpu::Texture,
+    ui_font: UiFontAtlas,
+    text_quads_scratch: Vec<TextQuad>,
     tileset: Option<TextureBind>,
     characters: HashMap<String, TextureBind>,
     screen_w: u32,
@@ -99,14 +108,8 @@ impl SubBatch {
                 color,
             },
         ]);
-        self.indices.extend_from_slice(&[
-            base,
-            base + 1,
-            base + 2,
-            base,
-            base + 2,
-            base + 3,
-        ]);
+        self.indices
+            .extend_from_slice(&[base, base + 1, base + 2, base, base + 2, base + 3]);
     }
 
     fn is_empty(&self) -> bool {
@@ -181,9 +184,10 @@ fn make_bind(
     layout: &wgpu::BindGroupLayout,
     sampler: &wgpu::Sampler,
     view: &wgpu::TextureView,
+    label: &str,
 ) -> TextureBind {
     let bind_group = device.create_bind_group(&wgpu::BindGroupDescriptor {
-        label: None,
+        label: Some(label),
         layout,
         entries: &[
             wgpu::BindGroupEntry {
@@ -199,43 +203,8 @@ fn make_bind(
     TextureBind { bind_group }
 }
 
-fn font_cell_uv(c: u8) -> (f32, f32, f32, f32) {
-    use crate::render::text::{FONT_ATLAS_CELL, FONT_ATLAS_COLS, FONT_ATLAS_ROWS};
-    let aw = (FONT_ATLAS_COLS * FONT_ATLAS_CELL) as f32;
-    let ah = (FONT_ATLAS_ROWS * FONT_ATLAS_CELL) as f32;
-    let idx = if (32..127).contains(&c) {
-        (c - 32) as u32
-    } else {
-        0
-    };
-    let col = idx % FONT_ATLAS_COLS;
-    let row = idx / FONT_ATLAS_COLS;
-    let u0 = (col * FONT_ATLAS_CELL) as f32 / aw;
-    let u1 = ((col + 1) * FONT_ATLAS_CELL) as f32 / aw;
-    let v0 = (row * FONT_ATLAS_CELL) as f32 / ah;
-    let v1 = ((row + 1) * FONT_ATLAS_CELL) as f32 / ah;
-    (u0, v0, u1, v1)
-}
-
-fn draw_text_sub(
-    target: &mut SubBatch,
-    mut x: f32,
-    y: f32,
-    text: &str,
-    color: [f32; 4],
-    scale: f32,
-) {
-    const GLYPH_W: f32 = 5.0;
-    const GLYPH_H: f32 = 7.0;
-    const GLYPH_STEP: f32 = 6.0;
-    let step = GLYPH_STEP * scale;
-    let gw = GLYPH_W * scale;
-    let gh = GLYPH_H * scale;
-    for b in text.bytes() {
-        let (u0, v0, u1, v1) = font_cell_uv(b);
-        target.push_quad(x, y, x + gw, y + gh, u0, v0, u1, v1, color);
-        x += step;
-    }
+fn theme_rgb(color: [f32; 3]) -> [f32; 4] {
+    packed_rgb_to_linear(render::to_u32(color[0], color[1], color[2]))
 }
 
 impl GpuRenderer {
@@ -327,27 +296,28 @@ impl GpuRenderer {
             }],
         });
 
-        let bind_group_layout_tex = device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
-            label: Some("tex_layout"),
-            entries: &[
-                wgpu::BindGroupLayoutEntry {
-                    binding: 0,
-                    visibility: wgpu::ShaderStages::FRAGMENT,
-                    ty: wgpu::BindingType::Texture {
-                        multisampled: false,
-                        view_dimension: wgpu::TextureViewDimension::D2,
-                        sample_type: wgpu::TextureSampleType::Float { filterable: true },
+        let bind_group_layout_tex =
+            device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
+                label: Some("tex_layout"),
+                entries: &[
+                    wgpu::BindGroupLayoutEntry {
+                        binding: 0,
+                        visibility: wgpu::ShaderStages::FRAGMENT,
+                        ty: wgpu::BindingType::Texture {
+                            multisampled: false,
+                            view_dimension: wgpu::TextureViewDimension::D2,
+                            sample_type: wgpu::TextureSampleType::Float { filterable: true },
+                        },
+                        count: None,
                     },
-                    count: None,
-                },
-                wgpu::BindGroupLayoutEntry {
-                    binding: 1,
-                    visibility: wgpu::ShaderStages::FRAGMENT,
-                    ty: wgpu::BindingType::Sampler(wgpu::SamplerBindingType::Filtering),
-                    count: None,
-                },
-            ],
-        });
+                    wgpu::BindGroupLayoutEntry {
+                        binding: 1,
+                        visibility: wgpu::ShaderStages::FRAGMENT,
+                        ty: wgpu::BindingType::Sampler(wgpu::SamplerBindingType::Filtering),
+                        count: None,
+                    },
+                ],
+            });
 
         let pipeline_layout = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
             label: None,
@@ -403,12 +373,48 @@ impl GpuRenderer {
             ..Default::default()
         });
 
-        let white_view = upload_rgba(&device, &queue, "white", 1, 1, &[255, 255, 255, 255]);
-        let white = make_bind(&device, &bind_group_layout_tex, &sampler, &white_view);
+        let font_sampler = device.create_sampler(&wgpu::SamplerDescriptor {
+            label: Some("ui_font_linear"),
+            mag_filter: wgpu::FilterMode::Linear,
+            min_filter: wgpu::FilterMode::Linear,
+            address_mode_u: wgpu::AddressMode::ClampToEdge,
+            address_mode_v: wgpu::AddressMode::ClampToEdge,
+            ..Default::default()
+        });
 
-        let (font_rgba, fw, fh) = build_font_atlas_rgba();
-        let font_view = upload_rgba(&device, &queue, "font", fw, fh, &font_rgba);
-        let font = make_bind(&device, &bind_group_layout_tex, &sampler, &font_view);
+        let white_view = upload_rgba(&device, &queue, "white", 1, 1, &[255, 255, 255, 255]);
+        let white = make_bind(
+            &device,
+            &bind_group_layout_tex,
+            &sampler,
+            &white_view,
+            "white_bind_group",
+        );
+
+        let font_texture = device.create_texture(&wgpu::TextureDescriptor {
+            label: Some("ui_font_atlas"),
+            size: wgpu::Extent3d {
+                width: UI_FONT_ATLAS_DIM,
+                height: UI_FONT_ATLAS_DIM,
+                depth_or_array_layers: 1,
+            },
+            mip_level_count: 1,
+            sample_count: 1,
+            dimension: wgpu::TextureDimension::D2,
+            format: wgpu::TextureFormat::Rgba8Unorm,
+            usage: wgpu::TextureUsages::TEXTURE_BINDING | wgpu::TextureUsages::COPY_DST,
+            view_formats: &[],
+        });
+        let font_view = font_texture.create_view(&wgpu::TextureViewDescriptor::default());
+        let font = make_bind(
+            &device,
+            &bind_group_layout_tex,
+            &font_sampler,
+            &font_view,
+            "ui_font_bind_group",
+        );
+
+        let ui_font = UiFontAtlas::new().map_err(|e| e.to_string())?;
 
         Ok(Self {
             window,
@@ -423,6 +429,9 @@ impl GpuRenderer {
             sampler,
             white,
             font,
+            font_texture,
+            ui_font,
+            text_quads_scratch: Vec::new(),
             tileset: None,
             characters: HashMap::new(),
             screen_w,
@@ -451,6 +460,57 @@ impl GpuRenderer {
             .write_buffer(&self.uniform_buffer, 0, bytemuck::bytes_of(&u));
     }
 
+    fn push_ui_text(
+        &mut self,
+        font: &mut SubBatch,
+        text: &str,
+        x: f32,
+        y: f32,
+        color: [f32; 4],
+        text_scale: f32,
+        max_width: Option<f32>,
+    ) {
+        self.ui_font.layout_text_quads(
+            &self.queue,
+            &self.font_texture,
+            text,
+            x,
+            y,
+            text_scale,
+            max_width,
+            &mut self.text_quads_scratch,
+        );
+        for q in &self.text_quads_scratch {
+            font.push_quad(q.x0, q.y0, q.x1, q.y1, q.u0, q.v0, q.u1, q.v1, color);
+        }
+    }
+
+    /// Debug HUD: **Noto Sans Bold** via `layout_debug_text_quads` (separate from regular UI).
+    fn push_ui_debug_text(
+        &mut self,
+        font: &mut SubBatch,
+        text: &str,
+        x: f32,
+        y: f32,
+        color: [f32; 4],
+        text_scale: f32,
+        max_width: Option<f32>,
+    ) {
+        self.ui_font.layout_debug_text_quads(
+            &self.queue,
+            &self.font_texture,
+            text,
+            x,
+            y,
+            text_scale,
+            max_width,
+            &mut self.text_quads_scratch,
+        );
+        for q in &self.text_quads_scratch {
+            font.push_quad(q.x0, q.y0, q.x1, q.y1, q.u0, q.v0, q.u1, q.v1, color);
+        }
+    }
+
     fn ensure_tileset(&mut self, sheet: &LoadedSheet) {
         if self.tileset.is_some() {
             return;
@@ -469,6 +529,7 @@ impl GpuRenderer {
             &self.bind_group_layout_tex,
             &self.sampler,
             &view,
+            "tileset_bind_group",
         );
         self.tileset = Some(bind);
     }
@@ -491,12 +552,12 @@ impl GpuRenderer {
             &self.bind_group_layout_tex,
             &self.sampler,
             &view,
+            "character_bind_group",
         );
         self.characters.insert(id.to_string(), bind);
     }
 
     /// Full frame: world + UI.
-    #[allow(clippy::too_many_arguments)]
     #[allow(clippy::too_many_arguments)]
     fn draw_tilemap_pass(
         &mut self,
@@ -623,29 +684,33 @@ impl GpuRenderer {
                 })
                 .unwrap_or((AnimationKind::Idle, 0, false));
 
-            let (size_w, size_h, char_draw) =
-                if let Some(ss) = sprite_sheet {
-                    if let Some(sheet) = asset_store.get_sheet(&ss.character_id) {
-                        self.ensure_character(&ss.character_id, sheet);
-                        let cols = sheet.cols;
-                        let c = match anim_kind {
-                            AnimationKind::Idle => 0,
-                            AnimationKind::Walk => {
-                                let walk_cols = (cols - 1).max(1);
-                                (1 + (frame_index % walk_cols)).min(cols.saturating_sub(1))
-                            }
-                        };
-                        (
-                            sheet.frame_width as f32 * transform.scale.x,
-                            sheet.frame_height as f32 * transform.scale.y,
-                            Some((ss.character_id.clone(), sheet, row.min(sheet.rows.saturating_sub(1)), c)),
-                        )
-                    } else {
-                        (16.0 * transform.scale.x, 16.0 * transform.scale.y, None)
-                    }
+            let (size_w, size_h, char_draw) = if let Some(ss) = sprite_sheet {
+                if let Some(sheet) = asset_store.get_sheet(&ss.character_id) {
+                    self.ensure_character(&ss.character_id, sheet);
+                    let cols = sheet.cols;
+                    let c = match anim_kind {
+                        AnimationKind::Idle => 0,
+                        AnimationKind::Walk => {
+                            let walk_cols = (cols - 1).max(1);
+                            (1 + (frame_index % walk_cols)).min(cols.saturating_sub(1))
+                        }
+                    };
+                    (
+                        sheet.frame_width as f32 * transform.scale.x,
+                        sheet.frame_height as f32 * transform.scale.y,
+                        Some((
+                            ss.character_id.clone(),
+                            sheet,
+                            row.min(sheet.rows.saturating_sub(1)),
+                            c,
+                        )),
+                    )
                 } else {
                     (16.0 * transform.scale.x, 16.0 * transform.scale.y, None)
-                };
+                }
+            } else {
+                (16.0 * transform.scale.x, 16.0 * transform.scale.y, None)
+            };
 
             let bob_off = if walk_bob { -1.0 } else { 0.0 };
             let wx = transform.position.x - size_w * 0.5;
@@ -664,59 +729,95 @@ impl GpuRenderer {
                 let u1 = (src_x + sheet.frame_width) as f32 / tw;
                 let v0 = src_y as f32 / th;
                 let v1 = (src_y + sheet.frame_height) as f32 / th;
-                chars
-                    .entry(cid)
-                    .or_default()
-                    .push_quad(sx0, sy0, sx1, sy1, u0, v0, u1, v1, [1.0, 1.0, 1.0, 1.0]);
-            } else {
-                let c = sprite_color_to_linear(sprite.color);
-                white_over.push_quad(
+                chars.entry(cid).or_default().push_quad(
                     sx0,
                     sy0,
                     sx1,
                     sy1,
-                    0.0,
-                    0.0,
-                    1.0,
-                    1.0,
-                    c,
+                    u0,
+                    v0,
+                    u1,
+                    v1,
+                    [1.0, 1.0, 1.0, 1.0],
                 );
+            } else {
+                let c = sprite_color_to_linear(sprite.color);
+                white_over.push_quad(sx0, sy0, sx1, sy1, 0.0, 0.0, 1.0, 1.0, c);
             }
         }
     }
 
+    /// Screen-space portrait quad for the dialogue box, if `portrait.png` or a character sheet exists.
+    fn build_dialogue_portrait_batch(
+        &mut self,
+        asset_store: &mut AssetStore,
+        theme: &UiTheme,
+        npc_id: &str,
+        w: u32,
+        h: u32,
+        ui_scale: i32,
+    ) -> Option<(String, SubBatch)> {
+        let (pl, pt, pr, pb) = layout::dialogue_portrait_rect(w, h, theme, ui_scale);
+        let quad = |u0: f32, v0: f32, u1: f32, v1: f32| {
+            let mut batch = SubBatch::default();
+            let c = [1.0_f32, 1.0, 1.0, 1.0];
+            batch.push_quad(
+                pl as f32, pt as f32, pr as f32, pb as f32, u0, v0, u1, v1, c,
+            );
+            batch
+        };
+
+        if let Some(sheet) = asset_store.get_dialogue_portrait_sheet(npc_id) {
+            let key = dialogue_portrait_asset_key(npc_id);
+            self.ensure_character(&key, sheet);
+            let tw = sheet.width as f32;
+            let th = sheet.height as f32;
+            let fw = sheet.frame_width as f32;
+            let fh = sheet.frame_height as f32;
+            let u1 = fw / tw;
+            let v1 = fh / th;
+            return Some((key, quad(0.0, 0.0, u1, v1)));
+        }
+
+        let sheet = asset_store.get_sheet(npc_id)?;
+        self.ensure_character(npc_id, sheet);
+        let row = render::facing_sprite_row(Direction::Down).min(sheet.rows.saturating_sub(1));
+        let col = 0_u32;
+        let src_x = col * sheet.frame_width;
+        let src_y = row * sheet.frame_height;
+        let tw = sheet.width as f32;
+        let th = sheet.height as f32;
+        let u0 = src_x as f32 / tw;
+        let u1 = (src_x + sheet.frame_width) as f32 / tw;
+        let v0 = src_y as f32 / th;
+        let v1 = (src_y + sheet.frame_height) as f32 / th;
+        Some((npc_id.to_string(), quad(u0, v0, u1, v1)))
+    }
+
     #[allow(clippy::too_many_arguments)]
     fn draw_ui_pass(
+        &mut self,
         theme: &UiTheme,
         dialogue_message: Option<&str>,
+        dialogue_text_extra_left: i32,
         backpack_open: bool,
         panel_lines: Option<&crate::ui::BackpackPanelLines>,
         w: u32,
         h: u32,
         ui_scale: u32,
+        font_scale: f32,
         white_over: &mut SubBatch,
         font: &mut SubBatch,
     ) {
         let ui_s = ui_scale.max(1) as f32;
+        let text_s = ui_s * font_scale;
         let us = ui_scale.max(1) as i32;
 
         if let Some(msg) = dialogue_message {
             let (left, top, right, bottom) = layout::dialogue_box_rect(w, h, theme, us);
-            let fill = packed_rgb_to_linear(render::to_u32(
-                theme.dialogue_panel_fill[0],
-                theme.dialogue_panel_fill[1],
-                theme.dialogue_panel_fill[2],
-            ));
-            let border = packed_rgb_to_linear(render::to_u32(
-                theme.dialogue_panel_border[0],
-                theme.dialogue_panel_border[1],
-                theme.dialogue_panel_border[2],
-            ));
-            let text_c = packed_rgb_to_linear(render::to_u32(
-                theme.dialogue_text[0],
-                theme.dialogue_text[1],
-                theme.dialogue_text[2],
-            ));
+            let fill = theme_rgb(theme.dialogue_panel_fill);
+            let border = theme_rgb(theme.dialogue_panel_border);
+            let text_c = theme_rgb(theme.dialogue_text);
             white_over.push_quad(
                 left as f32,
                 top as f32,
@@ -742,59 +843,34 @@ impl GpuRenderer {
                     border,
                 );
             }
-            let (tx, ty) = layout::dialogue_text_pos(w, h, top, theme, us);
-            draw_text_sub(font, tx as f32, ty as f32, msg, text_c, ui_s);
+            let (tx, ty) =
+                layout::dialogue_text_pos(w, h, top, theme, us, dialogue_text_extra_left);
+            let inner_w =
+                ((right - tx).saturating_sub(theme.dialogue_padding_x * us)).max(1) as f32;
+            self.push_ui_text(
+                font,
+                msg,
+                tx as f32,
+                ty as f32,
+                text_c,
+                text_s,
+                Some(inner_w),
+            );
         }
 
         if backpack_open {
             if let Some(panel) = panel_lines {
                 let us = ui_scale.max(1) as i32;
                 let (left, top, right, bottom) = layout::backpack_panel_rect(w, h, theme, us);
-                let fill = packed_rgb_to_linear(render::to_u32(
-                    theme.backpack_panel_fill[0],
-                    theme.backpack_panel_fill[1],
-                    theme.backpack_panel_fill[2],
-                ));
-                let border = packed_rgb_to_linear(render::to_u32(
-                    theme.backpack_panel_border[0],
-                    theme.backpack_panel_border[1],
-                    theme.backpack_panel_border[2],
-                ));
-                let empty_c = packed_rgb_to_linear(render::to_u32(
-                    theme.backpack_slot_empty[0],
-                    theme.backpack_slot_empty[1],
-                    theme.backpack_slot_empty[2],
-                ));
-                let section_usable_c = packed_rgb_to_linear(render::to_u32(
-                    theme.backpack_section_usable[0],
-                    theme.backpack_section_usable[1],
-                    theme.backpack_section_usable[2],
-                ));
-                let section_weapon_c = packed_rgb_to_linear(render::to_u32(
-                    theme.backpack_section_weapon[0],
-                    theme.backpack_section_weapon[1],
-                    theme.backpack_section_weapon[2],
-                ));
-                let section_passive_c = packed_rgb_to_linear(render::to_u32(
-                    theme.backpack_section_passive[0],
-                    theme.backpack_section_passive[1],
-                    theme.backpack_section_passive[2],
-                ));
-                let row_weapon_c = packed_rgb_to_linear(render::to_u32(
-                    theme.backpack_row_weapon[0],
-                    theme.backpack_row_weapon[1],
-                    theme.backpack_row_weapon[2],
-                ));
-                let row_passive_c = packed_rgb_to_linear(render::to_u32(
-                    theme.backpack_row_passive[0],
-                    theme.backpack_row_passive[1],
-                    theme.backpack_row_passive[2],
-                ));
-                let row_equipped_c = packed_rgb_to_linear(render::to_u32(
-                    theme.backpack_row_equipped[0],
-                    theme.backpack_row_equipped[1],
-                    theme.backpack_row_equipped[2],
-                ));
+                let fill = theme_rgb(theme.backpack_panel_fill);
+                let border = theme_rgb(theme.backpack_panel_border);
+                let empty_c = theme_rgb(theme.backpack_slot_empty);
+                let section_usable_c = theme_rgb(theme.backpack_section_usable);
+                let section_weapon_c = theme_rgb(theme.backpack_section_weapon);
+                let section_passive_c = theme_rgb(theme.backpack_section_passive);
+                let row_weapon_c = theme_rgb(theme.backpack_row_weapon);
+                let row_passive_c = theme_rgb(theme.backpack_row_passive);
+                let row_equipped_c = theme_rgb(theme.backpack_row_equipped);
                 white_over.push_quad(
                     left as f32,
                     top as f32,
@@ -822,8 +898,19 @@ impl GpuRenderer {
                 }
                 let cx = layout::backpack_content_x(left, theme, us) as f32;
                 let indent = layout::backpack_slot_indent(us) as f32;
+                let panel_inner_w =
+                    ((right - left).saturating_sub(theme.backpack_padding * us * 2)).max(1) as f32;
+                let slot_max_w = (panel_inner_w - indent).max(8.0);
                 let u_ty = layout::backpack_usable_title_y(top, theme, us) as f32;
-                draw_text_sub(font, cx, u_ty, "Usable", section_usable_c, ui_s);
+                self.push_ui_text(
+                    font,
+                    "Usable",
+                    cx,
+                    u_ty,
+                    section_usable_c,
+                    text_s,
+                    Some(panel_inner_w),
+                );
                 let max_usable = layout::BACKPACK_MAX_USABLE_SLOTS;
                 let usable_count = panel.usable.len().min(max_usable);
                 for i in 0..max_usable {
@@ -834,10 +921,26 @@ impl GpuRenderer {
                     } else {
                         empty_c
                     };
-                    draw_text_sub(font, cx + indent, slot_y, label, c, ui_s);
+                    self.push_ui_text(
+                        font,
+                        label,
+                        cx + indent,
+                        slot_y,
+                        c,
+                        text_s,
+                        Some(slot_max_w),
+                    );
                 }
                 let w_ty = layout::backpack_weapon_title_y(top, theme, us) as f32;
-                draw_text_sub(font, cx, w_ty, "Weapons", section_weapon_c, ui_s);
+                self.push_ui_text(
+                    font,
+                    "Weapons",
+                    cx,
+                    w_ty,
+                    section_weapon_c,
+                    text_s,
+                    Some(panel_inner_w),
+                );
                 let max_weapon = layout::BACKPACK_MAX_WEAPON_SLOTS;
                 let weapon_count = panel.weapons.len().min(max_weapon);
                 for i in 0..max_weapon {
@@ -856,10 +959,26 @@ impl GpuRenderer {
                     } else {
                         empty_c
                     };
-                    draw_text_sub(font, cx + indent, slot_y, label, c, ui_s);
+                    self.push_ui_text(
+                        font,
+                        label,
+                        cx + indent,
+                        slot_y,
+                        c,
+                        text_s,
+                        Some(slot_max_w),
+                    );
                 }
                 let p_ty = layout::backpack_passive_title_y(top, theme, us) as f32;
-                draw_text_sub(font, cx, p_ty, "Passives", section_passive_c, ui_s);
+                self.push_ui_text(
+                    font,
+                    "Passives",
+                    cx,
+                    p_ty,
+                    section_passive_c,
+                    text_s,
+                    Some(panel_inner_w),
+                );
                 let max_passive = layout::BACKPACK_MAX_PASSIVE_SLOTS;
                 let passive_count = panel.passives.len().min(max_passive);
                 for i in 0..max_passive {
@@ -870,19 +989,43 @@ impl GpuRenderer {
                     } else {
                         empty_c
                     };
-                    draw_text_sub(font, cx + indent, slot_y, label, c, ui_s);
+                    self.push_ui_text(
+                        font,
+                        label,
+                        cx + indent,
+                        slot_y,
+                        c,
+                        text_s,
+                        Some(slot_max_w),
+                    );
                 }
             }
         }
     }
 
-    fn draw_debug_pass(fps_overlay: Option<f32>, ui_scale: u32, font: &mut SubBatch) {
-        if let Some(fps) = fps_overlay {
-            let label = format!("FPS:{fps:.0}");
-            let fg = packed_rgb_to_linear(render::to_u32(0.95, 0.9, 0.35));
-            let off = (6 * ui_scale.max(1)) as f32;
-            let ui_s = ui_scale.max(1) as f32;
-            draw_text_sub(font, off, off, &label, fg, ui_s);
+    fn draw_debug_pass(
+        &mut self,
+        overlay: Option<DebugOverlay>,
+        ui_scale: u32,
+        font_scale: f32,
+        font: &mut SubBatch,
+    ) {
+        let Some(o) = overlay else {
+            return;
+        };
+        // Linear black, alpha 1 — avoid `packed_rgb_to_linear(0)` which forces alpha 0.
+        let fg = [0.0, 0.0, 0.0, 1.0];
+        let ui_s = ui_scale.max(1) as f32;
+        let text_s = ui_s * font_scale;
+        let margin = 6.0 * text_s;
+        let line_step = 12.0 * text_s;
+        let mut y = margin;
+        let fps_label = format!("FPS:{:.0}", o.fps);
+        self.push_ui_debug_text(font, &fps_label, margin, y, fg, text_s, None);
+        y += line_step;
+        for line in &o.lines {
+            self.push_ui_debug_text(font, line, margin, y, fg, text_s, None);
+            y += line_step;
         }
     }
 
@@ -892,13 +1035,14 @@ impl GpuRenderer {
         tileset: Option<&LoadedSheet>,
         world: &World,
         dialogue_message: Option<&str>,
+        dialogue_npc_id: Option<&str>,
         backpack_open: bool,
-        _skill_registry: &SkillRegistry,
         asset_store: &mut AssetStore,
         theme: &UiTheme,
-        fps_overlay: Option<f32>,
+        debug_overlay: Option<DebugOverlay>,
         render_scale: RenderScale,
         ui_scale: u32,
+        font_scale: f32,
         panel_lines: Option<&crate::ui::BackpackPanelLines>,
     ) -> Result<(), String> {
         if let Some(s) = tileset {
@@ -934,6 +1078,27 @@ impl GpuRenderer {
         let mut white_over = SubBatch::default();
         let mut font = SubBatch::default();
 
+        let us_i = ui_scale.max(1) as i32;
+        let dialogue_portrait = if dialogue_message.is_some() {
+            dialogue_npc_id.and_then(|npc| {
+                self.build_dialogue_portrait_batch(
+                    asset_store,
+                    theme,
+                    npc,
+                    self.screen_w,
+                    self.screen_h,
+                    us_i,
+                )
+            })
+        } else {
+            None
+        };
+        let dialogue_text_extra_left = if dialogue_portrait.is_some() {
+            layout::dialogue_portrait_text_extra_left(theme, us_i)
+        } else {
+            0
+        };
+
         white_under.push_quad(0.0, 0.0, sw, sh, 0.0, 0.0, 1.0, 1.0, bg);
 
         self.draw_tilemap_pass(
@@ -960,19 +1125,21 @@ impl GpuRenderer {
             &mut white_over,
         );
 
-        Self::draw_ui_pass(
+        self.draw_ui_pass(
             theme,
             dialogue_message,
+            dialogue_text_extra_left,
             backpack_open,
             panel_lines,
             self.screen_w,
             self.screen_h,
             ui_scale,
+            font_scale,
             &mut white_over,
             &mut font,
         );
 
-        Self::draw_debug_pass(fps_overlay, ui_scale, &mut font);
+        self.draw_debug_pass(debug_overlay, ui_scale, font_scale, &mut font);
 
         // --- Upload & draw ---
         let surface_texture = self
@@ -1041,7 +1208,9 @@ impl GpuRenderer {
                 pass.draw_indexed(0..n, 0, 0..1);
             }
 
-            if let (Some(ts), Some((vb, ib, n))) = (&self.tileset, upload_batch(&self.device, "tiles", &tiles)) {
+            if let (Some(ts), Some((vb, ib, n))) =
+                (&self.tileset, upload_batch(&self.device, "tiles", &tiles))
+            {
                 pass.set_bind_group(1, &ts.bind_group, &[]);
                 pass.set_vertex_buffer(0, vb.slice(..));
                 pass.set_index_buffer(ib.slice(..), wgpu::IndexFormat::Uint32);
@@ -1052,7 +1221,9 @@ impl GpuRenderer {
                 if batch.is_empty() {
                     continue;
                 }
-                let Some(bg) = self.characters.get(id) else { continue };
+                let Some(bg) = self.characters.get(id) else {
+                    continue;
+                };
                 if let Some((vb, ib, n)) = upload_batch(&self.device, "char", batch) {
                     pass.set_bind_group(1, &bg.bind_group, &[]);
                     pass.set_vertex_buffer(0, vb.slice(..));
@@ -1066,6 +1237,21 @@ impl GpuRenderer {
                 pass.set_vertex_buffer(0, vb.slice(..));
                 pass.set_index_buffer(ib.slice(..), wgpu::IndexFormat::Uint32);
                 pass.draw_indexed(0..n, 0, 0..1);
+            }
+
+            if let Some((portrait_id, batch)) = dialogue_portrait.as_ref() {
+                if !batch.is_empty() {
+                    if let Some(bg) = self.characters.get(portrait_id) {
+                        if let Some((vb, ib, n)) =
+                            upload_batch(&self.device, "dialogue_portrait", batch)
+                        {
+                            pass.set_bind_group(1, &bg.bind_group, &[]);
+                            pass.set_vertex_buffer(0, vb.slice(..));
+                            pass.set_index_buffer(ib.slice(..), wgpu::IndexFormat::Uint32);
+                            pass.draw_indexed(0..n, 0, 0..1);
+                        }
+                    }
+                }
             }
 
             if let Some((vb, ib, n)) = upload_batch(&self.device, "font", &font) {

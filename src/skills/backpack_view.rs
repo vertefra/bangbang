@@ -63,10 +63,7 @@ pub fn cycle_equipped_weapon_in_backpack(
         .equipped_weapon_id
         .as_deref()
         .unwrap_or(weapons[0].as_str());
-    let idx = weapons
-        .iter()
-        .position(|w| w == current)
-        .unwrap_or(0) as i32;
+    let idx = weapons.iter().position(|w| w == current).unwrap_or(0) as i32;
     let next = (idx + delta).rem_euclid(n) as usize;
     backpack.equipped_weapon_id = Some(weapons[next].clone());
 }

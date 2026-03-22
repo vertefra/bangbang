@@ -1,0 +1,19 @@
+{
+  "width": 14,
+  "height": 10,
+  "tile_size": 32,
+  "player_start": [160, 65],
+  "tileset": "farwest_interior",
+  "tileset_tile_size": 32,
+  "tile_palette": "default",
+  "tileset_draw": {
+    "floor": 6,
+    "wall": 5,
+    "wang_autotile": true
+  },
+  "tiles": {
+    "fill": 0,
+    "perimeter": 1,
+    "rects": [{ "id": 0, "x": 5, "y": 9, "w": 1, "h": 1 }]
+  }
+}

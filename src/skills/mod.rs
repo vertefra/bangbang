@@ -72,14 +72,35 @@ mod tests {
         let beer = registry.get("beer").expect("beer");
 
         let mut world = World::new();
-        let a = world.spawn((Health { current: 10, max: 10 },));
-        let b = world.spawn((Health { current: 10, max: 10 },));
+        let a = world.spawn((Health {
+            current: 10,
+            max: 10,
+        },));
+        let b = world.spawn((Health {
+            current: 10,
+            max: 10,
+        },));
 
         apply_skill(weapon, &mut world, a, b).expect("weapon");
-        assert_eq!(*world.get::<&Health>(b).unwrap(), Health { current: 8, max: 10 });
+        assert_eq!(
+            *world.get::<&Health>(b).unwrap(),
+            Health {
+                current: 8,
+                max: 10
+            }
+        );
 
-        *world.get::<&mut Health>(a).unwrap() = Health { current: 5, max: 10 };
+        *world.get::<&mut Health>(a).unwrap() = Health {
+            current: 5,
+            max: 10,
+        };
         apply_skill(beer, &mut world, a, a).expect("beer");
-        assert_eq!(*world.get::<&Health>(a).unwrap(), Health { current: 8, max: 10 });
+        assert_eq!(
+            *world.get::<&Health>(a).unwrap(),
+            Health {
+                current: 8,
+                max: 10
+            }
+        );
     }
 }

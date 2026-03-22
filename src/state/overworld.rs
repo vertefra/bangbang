@@ -4,11 +4,16 @@
 //! `Facing` (from movement direction) and `AnimationState` (idle when still, walk + frame advance when moving),
 //! resolve collisions against the tilemap (tile 0 = walkable, else blocking). Queries entities with
 //! `Player`, `Transform`, `Facing`, and `AnimationState`.
+//!
+//! ## NPC interaction
+//!
+//! When the player is within [`crate::constants::NPC_INTERACT_RANGE`] of an [`crate::ecs::Npc`], the first such NPC
+//! yields [`NpcInteraction`] (`npc_id`, `conversation_id`) for entering dialogue. See `docs/npc.md`.
 
+use crate::constants::NPC_INTERACT_RANGE;
 use crate::ecs::{AnimationKind, AnimationState, Direction, Facing, Npc, Player, Transform, World};
 use crate::map::Tilemap;
 use crate::state::InputState;
-use crate::constants::NPC_INTERACT_RANGE;
 
 const PLAYER_SPEED: f32 = 200.0;
 const WALK_FRAMES: u32 = 4;
@@ -28,10 +33,12 @@ fn direction_from_vec2(v: glam::Vec2) -> Direction {
     }
 }
 
-/// Represents an interaction with an NPC in the overworld.
+/// Player is close enough to talk to an NPC (see [`crate::constants::NPC_INTERACT_RANGE`]).
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct NpcInteraction {
+    /// [`crate::ecs::Npc::id`] (map / character folder id).
     pub npc_id: String,
+    /// Dialogue file stem: `assets/dialogue/{conversation_id}.json`.
     pub conversation_id: String,
 }
 
@@ -45,12 +52,9 @@ pub fn update(
     tilemap: &Tilemap,
 ) -> (Option<NpcInteraction>, bool) {
     let dir = input.direction();
-    for (_e, (_, transform, facing, anim)) in world.query_mut::<(
-        &Player,
-        &mut Transform,
-        &mut Facing,
-        &mut AnimationState,
-    )>() {
+    for (_e, (_, transform, facing, anim)) in
+        world.query_mut::<(&Player, &mut Transform, &mut Facing, &mut AnimationState)>()
+    {
         if dir.length_squared() > 0.0 {
             facing.0 = direction_from_vec2(dir);
             anim.kind = AnimationKind::Walk;
@@ -76,11 +80,9 @@ pub fn update(
         let d = player_pos.distance(transform.position);
         if d <= NPC_INTERACT_RANGE {
             near_npc = true;
-            trigger.get_or_insert_with(|| {
-                NpcInteraction {
-                    npc_id: npc.id.clone(),
-                    conversation_id: npc.conversation_id.clone(),
-                }
+            trigger.get_or_insert_with(|| NpcInteraction {
+                npc_id: npc.id.clone(),
+                conversation_id: npc.conversation_id.clone(),
             });
             break;
         }
@@ -92,21 +94,17 @@ pub fn update(
 ///
 /// **Rust:** We work in tile indices: `(pos / ts).floor() as u32`. Separately test X-step, Y-step, then final cell.
 fn resolve_collision(old: glam::Vec2, new: glam::Vec2, tilemap: &Tilemap) -> glam::Vec2 {
-    let ts = tilemap.tile_size;
     let mut out = new;
-    let tx_new = (new.x / ts).floor() as u32;
-    let ty_new = (new.y / ts).floor() as u32;
-    let tx_old = (old.x / ts).floor() as u32;
-    let ty_old = (old.y / ts).floor() as u32;
-    if tilemap.is_blocking(tx_new, ty_old) {
+    let (tx_new, ty_new) = tilemap.tile_coords_for_world(new);
+    let (tx_old, ty_old) = tilemap.tile_coords_for_world(old);
+    if tilemap.is_blocking_i32(tx_new, ty_old) {
         out.x = old.x;
     }
-    if tilemap.is_blocking(tx_old, ty_new) {
+    if tilemap.is_blocking_i32(tx_old, ty_new) {
         out.y = old.y;
     }
-    let tx_f = (out.x / ts).floor() as u32;
-    let ty_f = (out.y / ts).floor() as u32;
-    if tilemap.is_blocking(tx_f, ty_f) {
+    let (tx_f, ty_f) = tilemap.tile_coords_for_world(out);
+    if tilemap.is_blocking_i32(tx_f, ty_f) {
         return old;
     }
     out

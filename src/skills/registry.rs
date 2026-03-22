@@ -14,7 +14,7 @@ impl SkillRegistry {
     pub fn load_builtins() -> Result<Self, String> {
         let skills_dir = crate::paths::asset_root().join("skills");
         let mut defs = HashMap::new();
-        
+
         match std::fs::read_dir(&skills_dir) {
             Ok(entries) => {
                 for entry in entries.filter_map(Result::ok) {
@@ -28,12 +28,16 @@ impl SkillRegistry {
                 }
             }
             Err(e) => {
-                log::warn!("failed to read skills directory {}: {}", skills_dir.display(), e);
+                log::warn!(
+                    "failed to read skills directory {}: {}",
+                    skills_dir.display(),
+                    e
+                );
             }
         }
-        
+
         if defs.is_empty() {
-             log::warn!("no skills loaded from {}", skills_dir.display());
+            log::warn!("no skills loaded from {}", skills_dir.display());
         }
 
         Ok(Self { defs })

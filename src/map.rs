@@ -5,10 +5,11 @@
 //! magenta in fill mode. Maps are loaded via `map_loader`. Optional `tileset_draw` maps logical cells
 //! to sheet indices when rendering a tileset (art only; collision stays palette-driven).
 
+use glam::Vec2;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 
-/// RGB in 0.0–1.0 for `TilePalette::loader_fallback` (bordered demo map when load fails).
+/// RGB in 0.0–1.0 for `TilePalette::loader_fallback` (simple 0/1 palette for tests or placeholder maps).
 const FALLBACK_FLOOR_RGB: [f32; 3] = [0.35, 0.38, 0.4];
 const FALLBACK_WALL_RGB: [f32; 3] = [0.2, 0.18, 0.22];
 
@@ -29,7 +30,7 @@ pub struct TilePalette {
 }
 
 impl TilePalette {
-    /// Palette used by `map_loader::fallback_tilemap` (ids 0 / 1 only).
+    /// Convenience palette for simple ids `0` / `1` maps.
     pub fn loader_fallback() -> Self {
         let mut tiles = HashMap::new();
         tiles.insert(
@@ -54,15 +55,20 @@ impl TilePalette {
         let raw: HashMap<String, TilePaletteEntry> = serde_json::from_str(s)?;
         let mut tiles = HashMap::with_capacity(raw.len());
         for (k, v) in raw {
-            if let Ok(id) = k.parse::<u32>() {
-                tiles.insert(id, v);
+            match k.parse::<u32>() {
+                Ok(id) => {
+                    tiles.insert(id, v);
+                }
+                Err(_) => {
+                    log::warn!("tile palette key is not a valid u32 tile id: {:?}", k);
+                }
             }
         }
         Ok(TilePalette { tiles })
     }
 }
 
-/// When set, rendering maps each cell’s **logical** tile id to sheet indices (see `software::draw`).
+/// When set, rendering maps each cell’s **logical** tile id to sheet indices in the GPU tilemap pass.
 #[derive(Clone, Debug, Deserialize, Serialize)]
 pub struct TilesetDraw {
     pub floor: u32,
@@ -130,6 +136,29 @@ impl Tilemap {
     /// Total height in world units (pixels).
     pub fn height_pixels(&self) -> f32 {
         self.height as f32 * self.tile_size
+    }
+
+    /// Tile grid indices for a world position: `(pos / tile_size).floor()` per axis (same as collision).
+    pub fn tile_coords_for_world(&self, pos: Vec2) -> (i32, i32) {
+        let ts = self.tile_size;
+        ((pos.x / ts).floor() as i32, (pos.y / ts).floor() as i32)
+    }
+
+    /// Blocking if tile indices are outside the map or if [`is_blocking`](Self::is_blocking) for the cell.
+    pub fn is_blocking_i32(&self, tx: i32, ty: i32) -> bool {
+        if tx < 0 || ty < 0 {
+            return true;
+        }
+        let Ok(x) = u32::try_from(tx) else {
+            return true;
+        };
+        let Ok(y) = u32::try_from(ty) else {
+            return true;
+        };
+        if x >= self.width || y >= self.height {
+            return true;
+        }
+        self.is_blocking(x, y)
     }
 }
 
@@ -223,5 +252,30 @@ mod tests {
     fn tile_palette_json_requires_walkable() {
         let j = r#"{"0":{"color":[1.0,0.0,0.0]}}"#;
         assert!(TilePalette::from_json_str(j).is_err());
+    }
+
+    #[test]
+    fn tile_coords_for_world_floors_to_grid() {
+        let m = tiny_map(vec![0], palette_0_1());
+        assert_eq!(m.tile_coords_for_world(Vec2::new(0.0, 0.0)), (0, 0));
+        assert_eq!(m.tile_coords_for_world(Vec2::new(31.9, 0.0)), (0, 0));
+        assert_eq!(m.tile_coords_for_world(Vec2::new(32.0, 0.0)), (1, 0));
+        assert_eq!(m.tile_coords_for_world(Vec2::new(63.0, 31.0)), (1, 0));
+    }
+
+    #[test]
+    fn tile_coords_for_world_negative_axes() {
+        let m = tiny_map(vec![0], palette_0_1());
+        assert_eq!(m.tile_coords_for_world(Vec2::new(-0.1, -0.1)), (-1, -1));
+    }
+
+    #[test]
+    fn is_blocking_i32_matches_oob_and_palette() {
+        let m = tiny_map(vec![0, 1, 2], palette_0_1());
+        assert!(m.is_blocking_i32(-1, 0));
+        assert!(m.is_blocking_i32(0, -1));
+        assert!(!m.is_blocking_i32(0, 0));
+        assert!(m.is_blocking_i32(1, 0));
+        assert!(m.is_blocking_i32(3, 0));
     }
 }

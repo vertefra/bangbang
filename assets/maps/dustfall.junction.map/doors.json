@@ -1,0 +1,9 @@
+[
+  {
+    "rect": [240, 512, 34, 34],
+    "to_map": "mumhome.firstFloor",
+    "spawn": [192, 272],
+    "require_confirm": false,
+    "prop": "none"
+  }
+]

@@ -1,13 +1,39 @@
 //! Conversation tree types: nodes, branches, effects. Deserialized from JSON.
+//!
+//! ## Conditions (branch)
+//!
+//! | Prefix | Example | Checks |
+//! |--------|---------|--------|
+//! | `flag:` | `flag:met_sheriff` | `WorldState::has_flag` |
+//! | `path:` | `path:bandit` | `WorldState::path()` |
+//! | `quest_active:` | `quest_active:withdraw_gold` | `WorldState::quest_active` |
+//! | `quest_complete:` | `quest_complete:withdraw_gold` | `WorldState::quest_complete` |
+//!
+//! ## Effects (node)
+//!
+//! | Prefix | Example | Calls |
+//! |--------|---------|-------|
+//! | `set_flag:` | `set_flag:met_sheriff` | `WorldState::set_flag` |
+//! | `set_path:` | `set_path:bandit` | `WorldState::choose_path` |
+//! | `start_quest:` | `start_quest:withdraw_gold` | `WorldState::start_quest` |
+//! | `complete_quest:` | `complete_quest:withdraw_gold` | `WorldState::complete_quest` |
 
 use serde::Deserialize;
 use std::collections::HashMap;
 
 /// One conversation: start node id and all nodes by id.
+///
+/// Optional `require_state` gates entry: if present, [`crate::dialogue::state_satisfied`] must
+/// return `true` before the tree opens. When gating fails, `default_line` is shown instead.
 #[derive(Debug, Clone)]
 pub struct Conversation {
     pub start: String,
     pub nodes: HashMap<String, Node>,
+    /// Optional condition that must hold for this conversation to open (e.g. `"quest_active:withdraw_gold"`).
+    /// Uses the same syntax as branch conditions. `None` = always open.
+    pub require_state: Option<String>,
+    /// Line shown when `require_state` is not satisfied. If `None`, dialogue is silently skipped.
+    pub default_line: Option<String>,
 }
 
 /// One node: single line, or multiple lines; then next node or branches.
@@ -25,7 +51,10 @@ pub struct Node {
     pub effects: Vec<String>,
 }
 
-/// Conditional branch: optional condition (e.g. "flag:met_sheriff", "path:bandit"), next node id.
+/// Conditional branch: optional condition, next node id.
+///
+/// Supported condition prefixes: `flag:`, `path:`, `quest_active:`, `quest_complete:`.
+/// A branch with no condition always matches (use as default/fallback after specific conditions).
 #[derive(Debug, Clone, Deserialize)]
 pub struct Branch {
     #[serde(default)]
@@ -37,6 +66,10 @@ pub struct Branch {
 struct ConversationJson {
     pub start: String,
     pub nodes: HashMap<String, Node>,
+    #[serde(default)]
+    pub require_state: Option<String>,
+    #[serde(default)]
+    pub default_line: Option<String>,
 }
 
 impl Conversation {
@@ -67,7 +100,10 @@ impl Conversation {
 }
 
 impl Node {
-    /// First matching branch for the given story state. Condition format: "flag:name" or "path:name".
+    /// First matching branch for the given story state.
+    ///
+    /// Supported condition formats: `flag:name`, `path:name`, `quest_active:id`,
+    /// `quest_complete:id`.
     pub fn resolve_next(&self, world_state: &crate::state::WorldState) -> Option<String> {
         if let Some(ref next) = self.next {
             return Some(next.clone());
@@ -81,26 +117,37 @@ impl Node {
     }
 }
 
+pub(super) fn condition_matches(cond: &str, world_state: &crate::state::WorldState) -> bool {
+    let cond = cond.trim();
+    if cond.is_empty() {
+        return true;
+    }
+    if let Some(flag) = cond.strip_prefix("flag:") {
+        return world_state.has_flag(flag.trim());
+    }
+    if let Some(path) = cond.strip_prefix("path:") {
+        return world_state
+            .path()
+            .map(|p| p == path.trim())
+            .unwrap_or(false);
+    }
+    if let Some(id) = cond.strip_prefix("quest_active:") {
+        return world_state.quest_active(id.trim());
+    }
+    if let Some(id) = cond.strip_prefix("quest_complete:") {
+        return world_state.quest_complete(id.trim());
+    }
+    log::warn!("dialogue condition has unknown prefix: {:?}", cond);
+    false
+}
+
 impl Branch {
     fn matches(&self, world_state: &crate::state::WorldState) -> bool {
         let cond = match &self.condition {
             Some(c) => c,
             None => return true,
         };
-        let cond = cond.trim();
-        if cond.is_empty() {
-            return true;
-        }
-        if let Some(flag) = cond.strip_prefix("flag:") {
-            return world_state.has_flag(flag.trim());
-        }
-        if let Some(path) = cond.strip_prefix("path:") {
-            return world_state
-                .path()
-                .map(|p| p == path.trim())
-                .unwrap_or(false);
-        }
-        false
+        condition_matches(cond, world_state)
     }
 }
 
@@ -111,6 +158,8 @@ impl Conversation {
         Ok(Conversation {
             start: j.start,
             nodes: j.nodes,
+            require_state: j.require_state,
+            default_line: j.default_line,
         })
     }
 
@@ -129,6 +178,11 @@ impl Conversation {
                 effects: vec![],
             },
         );
-        Conversation { start, nodes }
+        Conversation {
+            start,
+            nodes,
+            require_state: None,
+            default_line: None,
+        }
     }
 }

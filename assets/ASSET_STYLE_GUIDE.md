@@ -45,6 +45,14 @@ Palette is limited and shared across tiles, characters, and props for a cohesive
 - **Collision**: Mark impassable tiles in map data; art can use Wood dark, stone, or fences to read as solid.
 - **Tile size**: Match map cell size (e.g. 32×32 or 48×48 for prototype; 96×96 for final). One tile = one cell.
 
+## Buildings (structures)
+- **Camera**: **High top-down** (same as ground tilesets and map objects). Vertical walls show a sliver of roof; door reads on the **south** face unless the map calls for another facing.
+- **Scale**: Width/height in pixels should be a **multiple of the map `tile_size`** (e.g. 32) so one building lines up with collision rectangles. Prototype: match footprint in tiles (e.g. 11×8 cells → 352×256 px art at 32 px/tile).
+- **Materials**: **Wood** frontier construction — planks and beams use Wood light/mid/dark (`#D4A574`, `#8B6914`, `#5C4A2E`); trim against sand uses Sand light/mid. Stone civic buildings (bank, jail) can add Dust/`#8B7355` and cool gray sparingly; still keep the warm dusty overall read.
+- **Roof**: Simple pitched roof, slightly darker than walls; avoid neon or saturated reds except small Accent accents (signage only).
+- **Readability**: Clear silhouette at gameplay zoom; door and porch readable in **3–5** major tones per surface; same outline rule as characters (all outlined or all lineless per area).
+- **Integration**: Deliver as a **single PNG**; engine prefers `assets/props/{id}.prop/sheet.png` + `sheet.json` (`rows`/`cols`, usually `1`×`1`) for map props, and `assets/props/{id}.door/` for door props. **Walkable yard / paths must be transparent pixels** — the map tilemap draws the ground and owns collision. Opaque pixels in the prop sit on top: if you paint sand into the PNG, it is **not** walkable in any special way (and can hide the player); cut it away or match `map.json` walkable tiles and rely on transparency so the tilemap shows through. Collision stays in `map.json`. Place `doors.json` rects on walkable tiles at the real door/steps.
+
 ## Characters & props
 - **Silhouette**: Clear and readable at target resolution; cowboy hat, bandana, gun belt, etc. should read at a glance.
 - **Animation**: Idle + walk (4 or 8 directions if needed). Frame count and layout per `sheet.json` (rows/cols).
@@ -54,7 +62,9 @@ Palette is limited and shared across tiles, characters, and props for a cohesive
 - **Characters**: `assets/characters/{id}/` — `sheet.png`, `sheet.json`.
 - **NPCs**: `assets/npc/{id}.npc/` or `assets/npc/{id}.npc.json` plus sprites as referenced.
 - **Tiles**: `assets/tiles/` (or per-map tile sets as used by map loader).
-- **Maps**: `assets/maps/{id}.map/` — `map.json`, `npc.json`; art in same folder or shared tiles.
+- **Maps**: `assets/maps/{id}.map/` — `map.json`, `npc.json`, optional `props.json`; art in same folder or shared tiles.
+- **Props (buildings, large objects)**: `assets/props/{id}.prop/` — `sheet.png`, `sheet.json` (grid). Referenced from map `props.json` by `id`; prefer camelCase ids like `billyHouse`.
+- **Map doors (transitions)**: `doors.json` field **`prop`** → `assets/props/{id}.door/` by convention (for example `"south"` → `assets/props/south.door/`, `"southHeavy"` → `assets/props/southHeavy.door/`). Use **`"none"`** or omit the field for no sprite when the doorway is already drawn on a building prop or tiles. Same palette/outline rules as buildings.
 
 ---
 

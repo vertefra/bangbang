@@ -3,7 +3,6 @@
 use serde::Deserialize;
 use std::path::PathBuf;
 
-
 fn config_path() -> PathBuf {
     crate::paths::asset_root().join("config.json")
 }
@@ -15,6 +14,8 @@ struct RenderSettingsFile {
     ui_scale: u32,
     window_width: u32,
     window_height: u32,
+    /// Multiplier on UI glyph size; layout rects still use `ui_scale` only.
+    font_scale: Option<f32>,
 }
 
 impl Default for RenderSettingsFile {
@@ -24,6 +25,7 @@ impl Default for RenderSettingsFile {
             ui_scale: 2,
             window_width: 800,
             window_height: 600,
+            font_scale: None,
         }
     }
 }
@@ -35,6 +37,7 @@ pub struct RenderSettings {
     pub ui_scale: u32,
     pub window_width: u32,
     pub window_height: u32,
+    pub font_scale: f32,
 }
 
 impl Default for RenderSettings {
@@ -44,6 +47,7 @@ impl Default for RenderSettings {
             ui_scale: 2,
             window_width: 800,
             window_height: 600,
+            font_scale: 1.0,
         }
     }
 }
@@ -58,11 +62,17 @@ impl From<RenderSettingsFile> for RenderSettings {
         let ui_scale = f.ui_scale.max(1);
         let window_width = f.window_width.max(1);
         let window_height = f.window_height.max(1);
+        let font_scale = f
+            .font_scale
+            .filter(|&x| x.is_finite() && x > 0.0)
+            .map(|x| x.clamp(0.25, 4.0))
+            .unwrap_or(1.0);
         Self {
             render_scale,
             ui_scale,
             window_width,
             window_height,
+            font_scale,
         }
     }
 }
@@ -85,9 +95,8 @@ impl std::fmt::Display for ConfigError {
 /// Load from `assets/config.json`.
 pub fn load() -> Result<RenderSettings, ConfigError> {
     let path = config_path();
-    let s = std::fs::read_to_string(&path)
-        .map_err(|e| ConfigError::Io(e, path.clone()))?;
-    let file: RenderSettingsFile = serde_json::from_str(&s)
-        .map_err(|e| ConfigError::Json(e, path.clone()))?;
+    let s = std::fs::read_to_string(&path).map_err(|e| ConfigError::Io(e, path.clone()))?;
+    let file: RenderSettingsFile =
+        serde_json::from_str(&s).map_err(|e| ConfigError::Json(e, path.clone()))?;
     Ok(RenderSettings::from(file))
 }

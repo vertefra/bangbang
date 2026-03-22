@@ -1,11 +1,9 @@
-use crate::map::Tilemap;
 use crate::ecs::Direction;
+use crate::map::Tilemap;
 
 pub mod color;
-pub mod text;
 
 pub use color::*;
-pub use text::*;
 
 #[derive(Debug, Clone, Copy, PartialEq, PartialOrd)]
 pub struct RenderScale(pub f32);
@@ -26,9 +24,9 @@ pub fn facing_sprite_row(d: Direction) -> u32 {
     }
 }
 
-const WANG16_SHEET_LUT: [u32; 16] = [
-    4, 15, 1, 14, 10, 8, 2, 12, 11, 13, 7, 5, 9, 6, 0, 3,
-];
+/// Maps corner signature `NW*8 + NE*4 + SW*2 + SE` (upper=1, lower=0) to sheet tile index
+/// (`row*4 + col`).  Derived from `farwest_interior_metadata.json` bounding-box positions.
+const WANG16_SHEET_LUT: [u32; 16] = [6, 7, 10, 9, 2, 11, 4, 15, 5, 14, 1, 8, 3, 0, 13, 12];
 
 fn tile_blocking_oob_wall(tilemap: &Tilemap, xi: i32, yi: i32) -> bool {
     if xi < 0 || yi < 0 {

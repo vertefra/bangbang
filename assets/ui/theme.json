@@ -3,15 +3,17 @@
     "panel_fill": [0.12, 0.1, 0.14],
     "panel_border": [0.35, 0.32, 0.38],
     "text": [0.95, 0.9, 0.85],
-    "box_height": 60,
+    "box_height": 100,
     "padding_x": 24,
     "padding_y": 20,
-    "border_top_px": 2
+    "border_top_px": 2,
+    "portrait_width": 64,
+    "portrait_height": 64,
+    "portrait_gap": 12
   },
   "backpack": {
     "panel_fill": [0.1, 0.08, 0.12],
     "panel_border": [0.3, 0.28, 0.34],
-    "title": [0.9, 0.85, 0.8],
     "slot_empty": [0.5, 0.48, 0.52],
     "panel_width": 320,
     "panel_height": 560,

@@ -1,8 +1,39 @@
 {
-  "start": "greeting",
+  "require_state": null,
+  "default_line": "Martha: Hello, sunshine!",
+  "start": "router",
   "nodes": {
-    "greeting": {
-      "line": "Helloworld!",
+    "router": {
+      "branches": [
+        {
+          "condition": "quest_active:withdraw_gold",
+          "next": "go_get_the_gold_reminder"
+        },
+        {
+          "next": "favor"
+        }
+      ]
+    },
+    "go_get_the_gold_reminder": {
+      "lines": [
+        "Martha: Please go get the gold."
+      ],
+      "next": null
+    },
+    "favor": {
+      "lines": [
+        "Martha: Morning, sunshine.",
+        "You were tossing and turning again.",
+        "Dreaming of your father?",
+        "Folks say he was a legend, but nobody can agree if he wore a badge or a bandana.",
+        "Anyway, dreams don't buy flour.",
+        "Do me a favor?",
+        "Go to the Bank and withdraw our gold for the week.",
+        "I need to hit the Emporium."
+      ],
+      "effects": [
+        "start_quest:withdraw_gold"
+      ],
       "next": null
     }
   }

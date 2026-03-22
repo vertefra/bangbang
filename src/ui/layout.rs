@@ -7,7 +7,12 @@ fn s(ui_scale: i32) -> i32 {
 }
 
 /// Full-screen rect for the dialogue box at the bottom. Returns (left, top, right, bottom).
-pub fn dialogue_box_rect(screen_w: u32, screen_h: u32, theme: &UiTheme, ui_scale: i32) -> (i32, i32, i32, i32) {
+pub fn dialogue_box_rect(
+    screen_w: u32,
+    screen_h: u32,
+    theme: &UiTheme,
+    ui_scale: i32,
+) -> (i32, i32, i32, i32) {
     let sc = s(ui_scale);
     let h = screen_h as i32;
     let box_h = theme.dialogue_box_height * sc;
@@ -15,22 +20,51 @@ pub fn dialogue_box_rect(screen_w: u32, screen_h: u32, theme: &UiTheme, ui_scale
     (0, top, screen_w as i32, h)
 }
 
+/// Extra horizontal offset for dialogue text when a portrait is shown (portrait width + gap), in screen px.
+pub fn dialogue_portrait_text_extra_left(theme: &UiTheme, ui_scale: i32) -> i32 {
+    let sc = s(ui_scale);
+    theme.dialogue_portrait_width * sc + theme.dialogue_portrait_gap * sc
+}
+
+/// Portrait quad inside the dialogue box (left, aligned with text top padding). Screen px.
+pub fn dialogue_portrait_rect(
+    screen_w: u32,
+    screen_h: u32,
+    theme: &UiTheme,
+    ui_scale: i32,
+) -> (i32, i32, i32, i32) {
+    let (_, dtop, _, _) = dialogue_box_rect(screen_w, screen_h, theme, ui_scale);
+    let sc = s(ui_scale);
+    let left = theme.dialogue_padding_x * sc;
+    let top = dtop + theme.dialogue_padding_y * sc;
+    let pw = theme.dialogue_portrait_width * sc;
+    let ph = theme.dialogue_portrait_height * sc;
+    (left, top, left + pw, top + ph)
+}
+
 /// Text position for the dialogue message: (x, y) inside the dialogue box (with padding).
+/// `extra_left` is usually `0` or [`dialogue_portrait_text_extra_left`].
 pub fn dialogue_text_pos(
     _screen_w: u32,
     _screen_h: u32,
     dialogue_top: i32,
     theme: &UiTheme,
     ui_scale: i32,
+    extra_left: i32,
 ) -> (i32, i32) {
     let sc = s(ui_scale);
-    let x = theme.dialogue_padding_x * sc;
+    let x = theme.dialogue_padding_x * sc + extra_left;
     let y = dialogue_top + theme.dialogue_padding_y * sc;
     (x, y)
 }
 
 /// Backpack panel rect centered on screen. Returns (left, top, right, bottom).
-pub fn backpack_panel_rect(screen_w: u32, screen_h: u32, theme: &UiTheme, ui_scale: i32) -> (i32, i32, i32, i32) {
+pub fn backpack_panel_rect(
+    screen_w: u32,
+    screen_h: u32,
+    theme: &UiTheme,
+    ui_scale: i32,
+) -> (i32, i32, i32, i32) {
     let sc = s(ui_scale);
     let w = screen_w as i32;
     let h = screen_h as i32;
@@ -41,7 +75,7 @@ pub fn backpack_panel_rect(screen_w: u32, screen_h: u32, theme: &UiTheme, ui_sca
     (left, top, left + pw, top + ph)
 }
 
-/// Y position for the "Usable Skills" section title (inside backpack panel).
+/// Y position for the "Usable" section title (inside backpack panel).
 pub fn backpack_usable_title_y(panel_top: i32, theme: &UiTheme, ui_scale: i32) -> i32 {
     let sc = s(ui_scale);
     panel_top + theme.backpack_padding * sc
@@ -99,40 +133,15 @@ pub fn backpack_passive_title_y(panel_top: i32, theme: &UiTheme, ui_scale: i32) 
 }
 
 /// Y position for a passive permanent slot row.
-pub fn backpack_passive_slot_y(panel_top: i32, theme: &UiTheme, index: usize, ui_scale: i32) -> i32 {
-    let sc = s(ui_scale);
-    let py = backpack_passive_title_y(panel_top, theme, ui_scale);
-    py + backpack_title_h_px(sc) + backpack_slot_stride_px(theme, sc) * index as i32
-}
-
-/// Y position for the "Permanent Skills" section title.
-pub fn backpack_permanent_title_y(panel_top: i32, theme: &UiTheme, usable_count: usize, ui_scale: i32) -> i32 {
-    let sc = s(ui_scale);
-    let title_h = 20 * sc;
-    let gap = 4 * sc;
-    let slot_h = theme.backpack_slot_height * sc;
-    let slot_area = if usable_count > 0 {
-        title_h + (slot_h + gap) * usable_count as i32
-    } else {
-        0
-    };
-    panel_top + theme.backpack_padding * sc + title_h + slot_area + 12 * sc
-}
-
-/// Y position for a permanent slot.
-pub fn backpack_permanent_slot_y(
+pub fn backpack_passive_slot_y(
     panel_top: i32,
     theme: &UiTheme,
-    usable_count: usize,
     index: usize,
     ui_scale: i32,
 ) -> i32 {
     let sc = s(ui_scale);
-    let section_y = backpack_permanent_title_y(panel_top, theme, usable_count, ui_scale);
-    let title_h = 20 * sc;
-    let gap = 4 * sc;
-    let slot_h = theme.backpack_slot_height * sc;
-    section_y + title_h + (slot_h + gap) * index as i32
+    let py = backpack_passive_title_y(panel_top, theme, ui_scale);
+    py + backpack_title_h_px(sc) + backpack_slot_stride_px(theme, sc) * index as i32
 }
 
 /// X position for backpack content (title and slot labels).

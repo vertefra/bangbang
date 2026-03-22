@@ -1,9 +1,10 @@
-//! Load character sprite sheets from PNG (`assets/characters/{id}/sheet.png`, optional `sheet.json`)
+//! Load character sprite sheets from PNG (`assets/characters/{id}/sheet.png`, optional `sheet.json`),
+//! NPC folders (`assets/npc/{id}.npc/sheet.png`), map props (`assets/props/{id}/sheet.png`),
 //! and map tilesets from `assets/tiles/{id}.png` with optional `assets/tiles/{id}.json` (`tile_size`; square 4×4 sheets infer 32 or 16 from dimensions when JSON is missing).
+//! Optional dialogue portraits: `assets/npc/{id}.npc/portrait.png` or `assets/characters/{id}/portrait.png`.
 
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::path::PathBuf;
-
 
 fn assets_dir() -> PathBuf {
     crate::paths::asset_root()
@@ -82,7 +83,7 @@ fn infer_tile_size_for_square_sheet(width: u32, height: u32) -> u32 {
 
 /// Pick frame size for a map tileset PNG. `map_tile_size` (from `map.json`) wins over `{id}.json`.
 /// If the chosen size makes a single cell the whole image on a large square sheet, infer 4×4 instead
-/// — otherwise `software::draw` clamps every sheet index to `0`.
+/// — otherwise every tileset index resolves to the first cell in the GPU tilemap pass.
 fn resolve_map_tile_size(
     width: u32,
     height: u32,
@@ -139,11 +140,116 @@ fn default_tile_size() -> u32 {
     16
 }
 
-/// Load a character sheet by id. Tries `assets/characters/{id}/` then `assets/npc/{id}.npc/`. Returns None if sheet.png is missing.
+fn props_dir(id: &str) -> PathBuf {
+    assets_dir().join("props").join(id)
+}
+
+fn door_props_dir(id: &str) -> PathBuf {
+    assets_dir().join("props").join(format!("{id}.door"))
+}
+
+fn map_props_dir(id: &str) -> PathBuf {
+    assets_dir().join("props").join(format!("{id}.prop"))
+}
+
+fn snake_to_camel_id(id: &str) -> String {
+    let mut out = String::with_capacity(id.len());
+    let mut uppercase_next = false;
+    for ch in id.chars() {
+        if ch == '_' || ch == '-' || ch == ' ' {
+            uppercase_next = true;
+            continue;
+        }
+        if uppercase_next {
+            out.extend(ch.to_uppercase());
+            uppercase_next = false;
+        } else {
+            out.push(ch);
+        }
+    }
+    out
+}
+
+fn camel_to_snake_id(id: &str) -> String {
+    let mut out = String::with_capacity(id.len() + 4);
+    for (i, ch) in id.chars().enumerate() {
+        if ch.is_uppercase() {
+            if i > 0 {
+                out.push('_');
+            }
+            out.extend(ch.to_lowercase());
+        } else {
+            out.push(ch);
+        }
+    }
+    out
+}
+
+fn push_unique(vec: &mut Vec<String>, value: String) {
+    if !vec.iter().any(|existing| existing == &value) {
+        vec.push(value);
+    }
+}
+
+fn asset_id_variants(id: &str) -> Vec<String> {
+    let mut variants = Vec::new();
+    let trimmed = id.trim();
+    if trimmed.is_empty() {
+        return variants;
+    }
+    push_unique(&mut variants, trimmed.to_string());
+    push_unique(&mut variants, snake_to_camel_id(trimmed));
+    push_unique(&mut variants, camel_to_snake_id(trimmed));
+    variants
+}
+
+fn first_existing_prop_folder(candidates: &[String]) -> Option<String> {
+    candidates
+        .iter()
+        .find(|candidate| props_dir(candidate).join("sheet.png").exists())
+        .cloned()
+}
+
+/// Resolve a map `props.json` id to a folder under `assets/props/`.
+///
+/// Preferred convention is `assets/props/{id}.prop/` using camelCase ids like `billyHouse`.
+/// Legacy plain folders and snake_case ids are still accepted during migration.
+pub fn resolve_map_prop_sheet_id(id: &str) -> Option<String> {
+    let variants = asset_id_variants(id);
+    for variant in &variants {
+        if map_props_dir(variant).join("sheet.png").exists() {
+            return Some(format!("{variant}.prop"));
+        }
+    }
+    first_existing_prop_folder(&variants)
+}
+
+/// Resolve a door `prop` id from `doors.json` to an actual folder under `assets/props/`.
+///
+/// Preferred convention is `assets/props/{id}.door/` using camelCase ids like `southHeavy`.
+/// Legacy fallbacks keep older folders and snake_case ids working during migration.
+pub fn resolve_door_prop_sheet_id(id: &str) -> Option<String> {
+    let variants = asset_id_variants(id);
+    for variant in &variants {
+        if door_props_dir(variant).join("sheet.png").exists() {
+            return Some(format!("{variant}.door"));
+        }
+    }
+    let mut legacy_candidates = Vec::new();
+    for variant in &variants {
+        push_unique(&mut legacy_candidates, format!("door_{variant}"));
+    }
+    first_existing_prop_folder(&legacy_candidates)
+}
+
+    /// Load a character sheet by id. Tries `assets/characters/{id}/`, `assets/npc/{id}.npc/`,
+    /// then `assets/props/{id}/` (including suffixed ids like `southHeavy.door` or `billyHouse.prop`).
+    /// Returns None if sheet.png is missing.
 pub fn load_character_sheet(id: &str) -> Option<LoadedSheet> {
     let dirs = [
         character_dir(id),
         assets_dir().join("npc").join(format!("{}.npc", id)),
+        props_dir(id),
     ];
     for dir in &dirs {
         let png_path = dir.join("sheet.png");
@@ -160,7 +266,6 @@ fn load_sheet_from_dir(
     width: u32,
     height: u32,
 ) -> Option<LoadedSheet> {
-
     let (rows, cols) = std::fs::read_to_string(dir.join("sheet.json"))
         .ok()
         .and_then(|s| serde_json::from_str::<SheetMeta>(&s).ok())
@@ -181,15 +286,51 @@ fn load_sheet_from_dir(
     })
 }
 
+/// Cache key for a dedicated dialogue portrait in [`AssetStore::sheets`] and the GPU character texture map.
+pub fn dialogue_portrait_asset_key(npc_id: &str) -> String {
+    format!("{npc_id}__dialogue_portrait")
+}
+
+/// Load optional dialogue portrait: tries `assets/npc/{id}.npc/portrait.png` then `assets/characters/{id}/portrait.png`.
+/// Whole image is one frame (`rows`/`cols` = 1).
+pub fn load_dialogue_portrait(id: &str) -> Option<LoadedSheet> {
+    let paths = [
+        assets_dir()
+            .join("npc")
+            .join(format!("{id}.npc"))
+            .join("portrait.png"),
+        character_dir(id).join("portrait.png"),
+    ];
+    for path in &paths {
+        let (pixels, width, height) = load_png(path)?;
+        if width == 0 || height == 0 {
+            continue;
+        }
+        return Some(LoadedSheet {
+            pixels,
+            width,
+            height,
+            frame_width: width,
+            frame_height: height,
+            rows: 1,
+            cols: 1,
+        });
+    }
+    None
+}
+
 /// Cache of loaded character sheets. Load on first use.
 pub struct AssetStore {
     sheets: HashMap<String, LoadedSheet>,
+    /// NPC ids whose `portrait.png` was looked up and missing (avoid re-reading disk every frame).
+    dialogue_portrait_misses: HashSet<String>,
 }
 
 impl AssetStore {
     pub fn new() -> Self {
         Self {
             sheets: HashMap::new(),
+            dialogue_portrait_misses: HashSet::new(),
         }
     }
 
@@ -202,6 +343,25 @@ impl AssetStore {
         }
         self.sheets.get(id)
     }
+
+    /// Dedicated dialogue portrait for `npc_id`, if present on disk. Cached; misses are remembered per id.
+    pub fn get_dialogue_portrait_sheet(&mut self, npc_id: &str) -> Option<&LoadedSheet> {
+        let key = dialogue_portrait_asset_key(npc_id);
+        if self.dialogue_portrait_misses.contains(npc_id) {
+            return None;
+        }
+        if !self.sheets.contains_key(&key) {
+            match load_dialogue_portrait(npc_id) {
+                Some(sheet) => {
+                    self.sheets.insert(key.clone(), sheet);
+                }
+                None => {
+                    self.dialogue_portrait_misses.insert(npc_id.to_string());
+                }
+            }
+        }
+        self.sheets.get(&key)
+    }
 }
 
 impl Default for AssetStore {
@@ -212,7 +372,10 @@ impl Default for AssetStore {
 
 #[cfg(test)]
 mod tileset_tests {
-    use super::{infer_tile_size_for_square_sheet, load_tileset, resolve_map_tile_size};
+    use super::{
+        infer_tile_size_for_square_sheet, load_character_sheet, load_tileset,
+        resolve_door_prop_sheet_id, resolve_map_prop_sheet_id, resolve_map_tile_size,
+    };
 
     #[test]
     fn farwest_interior_is_four_by_four_at_32px() {
@@ -230,5 +393,32 @@ mod tileset_tests {
         assert_eq!(resolve_map_tile_size(128, 128, None, Some(32)), 32);
         assert_eq!(resolve_map_tile_size(128, 128, Some(32), None), 32);
         assert_eq!(infer_tile_size_for_square_sheet(128, 128), 32);
+    }
+
+    #[test]
+    fn south_heavy_alias_resolves_to_south_heavy_door_sheet() {
+        let id = resolve_door_prop_sheet_id("southHeavy").expect("assets/props/southHeavy.door/");
+        let s = load_character_sheet(&id).expect("load southHeavy door sheet");
+        assert_eq!(
+            (s.cols, s.rows, s.frame_width, s.frame_height),
+            (1, 1, 64, 48)
+        );
+    }
+
+    #[test]
+    fn south_door_prop_sheet_loads() {
+        let id = resolve_door_prop_sheet_id("south").expect("assets/props/south.door/");
+        let s = load_character_sheet(&id).expect("load south door sheet");
+        assert_eq!(
+            (s.cols, s.rows, s.frame_width, s.frame_height),
+            (1, 1, 48, 48)
+        );
+    }
+
+    #[test]
+    fn billy_house_alias_resolves_to_billy_house_prop_sheet() {
+        let id = resolve_map_prop_sheet_id("billyHouse").expect("assets/props/billyHouse.prop/");
+        let s = load_character_sheet(&id).expect("load billyHouse prop sheet");
+        assert_eq!((s.cols, s.rows), (1, 1));
     }
 }

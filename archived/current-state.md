@@ -1,8 +1,8 @@
-# Current State — Codebase Audit
+# Historical Audit Archive
 
-> **UPDATE (Refactor Complete):** All `CS-*` findings in this document have been successfully **RESOLVED** and eliminated from the codebase. This document remains for historical context.
+> This file is a frozen snapshot of an older audit. The `CS-*` sections below are **not** the current bug list, and many items have since been resolved or refactored. The stale body is preserved intentionally as archival context.
 
-> Machine-first, unambiguous language. Each finding has a unique ID for cross-referencing in `proposed-changes.md`.
+> Treat code locations and behavior descriptions here as historical context only. Use `docs/architecture.md`, `docs/game.md`, `docs/maps.md`, and `docs/ui.md` for the current system description.
 
 ---
 
@@ -71,7 +71,7 @@
 
 **Location:** `main.rs:67-131` (inside `WindowEvent::RedrawRequested`)
 
-**What happens:** `RedrawRequested` does: resize → compute dt → `AppState::update` → backpack toggle → backpack normalize → hotkeys → weapon cycle → fps → dialogue message → `gpu.draw_frame`. Game logic (state update, backpack toggle, skill hotkeys) is interleaved with rendering in the same event handler.
+**What happens:** `RedrawRequested` does: compute dt → `AppState::update` → backpack toggle → normalize → hotkeys → weapon cycle → (with `debug` feature) FPS smooth + `DebugOverlay` strings → dialogue message → then `gpu` resize → `gpu.draw_frame`. Game logic (state update, backpack toggle, skill hotkeys) is interleaved with rendering in the same event handler.
 
 **Why it is a problem:**
 1. No separation between update tick and render tick. If the game ever needs fixed-timestep physics, replay, or headless testing, the update logic is locked to the frame rate and to the window event loop.
@@ -87,7 +87,7 @@
 **Contents mixed in one file:**
 1. Wang autotile logic (tilemap rendering concern)
 2. `to_u32` / `fill_rect` / `draw_text` (CPU pixel drawing primitives)
-3. `build_font_atlas_rgba` (GPU font texture generation)
+3. `gpu/text_atlas.rs` — `fontdue` raster cache into a dynamic UI atlas (`Rgba8Unorm`, linear sampling)
 4. `facing_sprite_row` (ECS/animation concern)
 5. `BackpackPanelLines` struct + `backpack_panel_lines` function (UI data preparation concern)
 6. `tilemap_is_binary_collision_only` (map rendering concern)
@@ -113,7 +113,7 @@
 
 **Location:** `gpu/renderer.rs:505-1006`
 
-**What happens:** `GpuRenderer::draw_frame` is a single function (~500 lines) that handles: tilemap rendering (solid fill path, tileset path, wang autotile path), entity rendering (color rect path, sprite sheet path), UI overlay (dialogue box, backpack panel), FPS overlay, and the full wgpu render pass submission.
+**What happens:** `GpuRenderer::draw_frame` is a single function (~500 lines) that handles: tilemap rendering (solid fill path, tileset path, wang autotile path), entity rendering (color rect path, sprite sheet path), UI overlay (dialogue box, backpack panel), optional debug HUD (`DebugOverlay` / `draw_debug_pass`), and the full wgpu render pass submission.
 
 **Why it is a problem:** Adding new visual features (duel screen, HUD, map transitions, particle effects, NPC portraits, minimap) each add 50-200 lines to this function. The function will become unmaintainable.
 

@@ -2,5 +2,6 @@
 
 mod color;
 mod renderer;
+mod text_atlas;
 
-pub use renderer::{GpuRenderer, GpuVertex};
+pub use renderer::{DebugOverlay, GpuRenderer, GpuVertex};

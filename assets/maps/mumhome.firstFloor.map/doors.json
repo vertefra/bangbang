@@ -1,0 +1,16 @@
+[
+  {
+    "rect": [160, 32, 64, 32],
+    "to_map": "mumhome.secondFloor",
+    "spawn": [160, 252],
+    "require_confirm": false,
+    "prop": "south"
+  },
+  {
+    "rect": [160, 288, 64, 32],
+    "to_map": "dustfall.junction",
+    "spawn": [272, 546],
+    "require_confirm": false,
+    "prop": "none"
+  }
+]

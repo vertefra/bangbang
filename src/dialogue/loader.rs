@@ -14,7 +14,3 @@ pub fn load(conversation_id: &str) -> Option<Conversation> {
     Conversation::from_json(&s).ok()
 }
 
-/// Load conversation by id; if no file exists, return a one-line conversation from fallback_line.
-pub fn load_or_fallback(conversation_id: &str, fallback_line: &str) -> Conversation {
-    load(conversation_id).unwrap_or_else(|| Conversation::one_line(fallback_line))
-}

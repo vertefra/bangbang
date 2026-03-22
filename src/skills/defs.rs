@@ -76,7 +76,9 @@ impl SkillDef {
             }
         }
         match def.category {
-            SkillCategory::Usable if def.charges_default.is_none() || def.charges_default == Some(0) => {
+            SkillCategory::Usable
+                if def.charges_default.is_none() || def.charges_default == Some(0) =>
+            {
                 return Err(format!(
                     "skills: usable {} must set charges_default > 0",
                     id

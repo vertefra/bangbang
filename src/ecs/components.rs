@@ -1,7 +1,8 @@
 //! # ECS components
 //!
 //! **High-level:** Components are the "data" attached to entities in the ECS (Entity-Component-System)
-//! model. Types: `Transform` (position/scale), `Sprite` (color), `Player` (marker), `Npc` (id, conversation_id),
+//! model. Types: `Transform` (position/scale), `Sprite` (color), `Player` (marker), `DoorMarker` (map exit; `doors.json` `prop`),
+//! `Npc` (map character id + dialogue file stem),
 //! `Facing` (Direction for sprite row), `Direction`, `AnimationKind`, `AnimationState` (idle/walk, frame, timer).
 //! The `hecs` crate stores these on entities; systems query by component type.
 
@@ -44,7 +45,9 @@ pub struct Sprite {
     pub color: [f32; 4],
 }
 
-/// Character sprite sheet by id. Renderer draws from assets/characters/{id}/sheet.png; falls back to Sprite color if missing.
+/// Character or prop sprite sheet by id. Renderer loads via [`crate::assets::load_character_sheet`]
+/// (`assets/characters/`, `assets/npc/{id}.npc/`, `assets/props/{id}/`, including `.prop` / `.door`
+/// suffixed ids); falls back to Sprite color if missing.
 #[derive(Debug, Clone)]
 pub struct SpriteSheet {
     pub character_id: String,
@@ -63,10 +66,31 @@ pub struct SpriteSheet {
 pub struct Player;
 
 // -----------------------------------------------------------------------------
+// Door (map transition visual)
+// -----------------------------------------------------------------------------
+
+/// Marks a `doors.json` transition volume when `prop` is set; draws a resolved door prop sheet.
+#[derive(Debug, Clone, Copy)]
+pub struct DoorMarker;
+
+// -----------------------------------------------------------------------------
+// Map prop (buildings, large objects — `props.json`, no dialogue)
+// -----------------------------------------------------------------------------
+
+/// Static overworld decoration; sheet resolved from a map prop id under `assets/props/`.
+#[derive(Debug, Clone)]
+pub struct MapProp {
+    pub id: String,
+}
+
+// -----------------------------------------------------------------------------
 // Npc
 // -----------------------------------------------------------------------------
 
-/// Static NPC that shows dialogue when the player approaches. conversation_id keys into assets/dialogue/{id}.json.
+/// Overworld NPC: proximity in [`crate::state::overworld`] can start dialogue.
+///
+/// - `id` — same string as the map’s `npc.json` entry (folder `assets/npc/{id}.npc/`, sheet `assets/characters/{id}/`).
+/// - `conversation_id` — stem of `assets/dialogue/{conversation_id}.json` (from merged [`crate::config::NpcConfig`]).
 #[derive(Debug, Clone)]
 pub struct Npc {
     pub id: String,

@@ -9,7 +9,12 @@ use super::defs::{EffectOp, EffectStep, EffectTarget, SkillDef};
 use crate::constants::NPC_INTERACT_RANGE;
 
 /// Apply every effect in `skill` to `caster` / `opponent` entities. Fails if a target lacks `Health`.
-pub fn apply_skill(skill: &SkillDef, world: &mut World, caster: Entity, opponent: Entity) -> Result<(), String> {
+pub fn apply_skill(
+    skill: &SkillDef,
+    world: &mut World,
+    caster: Entity,
+    opponent: Entity,
+) -> Result<(), String> {
     for step in &skill.effects {
         apply_effect_step(step, world, caster, opponent)?;
     }
@@ -40,7 +45,7 @@ fn apply_effect_step(
     Ok(())
 }
 
-/// Nearest NPC with `Health` within [`OPPONENT_RANGE`] of the player, if any.
+/// Nearest NPC with `Health` within [`NPC_INTERACT_RANGE`](crate::constants::NPC_INTERACT_RANGE) of the player, if any.
 pub fn nearest_opponent_entity(world: &World) -> Option<Entity> {
     let player_pos = world
         .query::<(&Player, &Transform)>()

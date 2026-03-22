@@ -5,6 +5,7 @@
 
 pub mod app;
 pub mod input;
+pub mod map_transition;
 pub mod overworld;
 pub mod world;
 
