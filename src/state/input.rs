@@ -22,6 +22,10 @@ pub struct InputState {
     skill_hotkey_digit: Option<u8>,
     /// Tab / Shift+Tab weapon cycle while backpack is open. Consumed by `take_weapon_cycle_step`.
     weapon_cycle_step: Option<i32>,
+    /// F5 while backpack is open — save game. Consumed by `take_save_game_request`.
+    save_game_request: bool,
+    /// F9 while backpack is open — load game. Consumed by `take_load_game_request`.
+    load_game_request: bool,
 }
 
 impl InputState {
@@ -33,6 +37,18 @@ impl InputState {
     /// Take pending equipped-weapon cycle delta (+1 Tab, -1 Shift+Tab), if any, and clear it.
     pub fn take_weapon_cycle_step(&mut self) -> Option<i32> {
         self.weapon_cycle_step.take()
+    }
+
+    pub fn take_save_game_request(&mut self) -> bool {
+        let v = self.save_game_request;
+        self.save_game_request = false;
+        v
+    }
+
+    pub fn take_load_game_request(&mut self) -> bool {
+        let v = self.load_game_request;
+        self.load_game_request = false;
+        v
     }
 
     /// Normalized movement direction (unit length when diagonal). Zero vector if no keys held.
@@ -98,6 +114,16 @@ impl InputState {
                     if pressed && !event.repeat {
                         let delta = if mods.state().shift_key() { -1 } else { 1 };
                         self.weapon_cycle_step = Some(delta);
+                    }
+                }
+                KeyCode::F5 => {
+                    if pressed && !event.repeat {
+                        self.save_game_request = true;
+                    }
+                }
+                KeyCode::F9 => {
+                    if pressed && !event.repeat {
+                        self.load_game_request = true;
                     }
                 }
                 _ => {}

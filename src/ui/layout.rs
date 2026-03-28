@@ -117,6 +117,19 @@ pub fn backpack_hotkey_hint_y(panel_bottom: i32, theme: &UiTheme, ui_scale: i32)
     panel_bottom - theme.backpack_padding * sc - 14 * sc
 }
 
+/// "Save Game" line (above load / hint). Panel bottom is `bottom` from [`backpack_panel_rect`].
+pub fn backpack_save_game_y(panel_bottom: i32, theme: &UiTheme, ui_scale: i32) -> i32 {
+    let sc = s(ui_scale);
+    let hint = backpack_hotkey_hint_y(panel_bottom, theme, ui_scale);
+    hint - 32 * sc
+}
+
+/// "Load Game" line (between save and main hotkey hint).
+pub fn backpack_load_game_y(panel_bottom: i32, theme: &UiTheme, ui_scale: i32) -> i32 {
+    let sc = s(ui_scale);
+    backpack_save_game_y(panel_bottom, theme, ui_scale) + 16 * sc
+}
+
 /// Y position for the "Usable" section title (inside backpack panel, below panel title).
 pub fn backpack_usable_title_y(panel_top: i32, theme: &UiTheme, ui_scale: i32) -> i32 {
     let sc = s(ui_scale);

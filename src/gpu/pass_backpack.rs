@@ -231,6 +231,27 @@ pub(crate) fn draw_backpack_pass(
         let _ = passive_count;
     }
 
+    let save_y = layout::backpack_save_game_y(bottom, theme, us) as f32;
+    r.push_ui_text(
+        font,
+        "Save Game  [F5]",
+        cx,
+        save_y,
+        section_usable_c,
+        text_s * 0.9,
+        Some(panel_inner_w),
+    );
+    let load_y = layout::backpack_load_game_y(bottom, theme, us) as f32;
+    r.push_ui_text(
+        font,
+        "Load Game  [F9]",
+        cx,
+        load_y,
+        section_weapon_c,
+        text_s * 0.9,
+        Some(panel_inner_w),
+    );
+
     // Hotkey hint at bottom
     let hint_y = layout::backpack_hotkey_hint_y(bottom, theme, us) as f32;
     r.push_ui_text(
