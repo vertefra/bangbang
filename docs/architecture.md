@@ -24,7 +24,8 @@ src/
 ├── config.rs            # NpcConfig, MapDoor, CharacterNpcConfig; GameConfig (assets/game.json: start_map, seed flags, window title)
 ├── constants.rs         # Shared game constants (NPC_INTERACT_RANGE, door cooldown)
 ├── render_settings.rs   # GPU/window scales, ui_scale, font_scale (assets/config.json)
-├── paths.rs             # Centralized I/O paths (asset_root())
+├── paths.rs             # Centralized I/O paths (`asset_root()`, `save_game_file()`)
+├── save_game.rs         # JSON save/load snapshot (map, player, `WorldState`, NPC HP); see `docs/game.md`
 ├── map_loader.rs        # load_map(id) → Result<MapData, MapLoadError>
 ├── map.rs               # Tilemap, TilePalette, collision lookup
 ├── assets.rs            # AssetStore (cached textures/fonts)

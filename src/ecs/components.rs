@@ -7,6 +7,7 @@
 //! The `hecs` crate stores these on entities; systems query by component type.
 
 use glam::Vec2;
+use serde::{Deserialize, Serialize};
 
 // -----------------------------------------------------------------------------
 // Transform
@@ -101,7 +102,8 @@ pub struct Npc {
 // Facing (for sprite sheet row / direction)
 // -----------------------------------------------------------------------------
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize)]
+#[serde(rename_all = "PascalCase")]
 pub enum Direction {
     #[default]
     Down,
@@ -152,7 +154,7 @@ impl Default for AnimationState {
 // Health (HP for skill / combat resolution)
 // -----------------------------------------------------------------------------
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 pub struct Health {
     pub current: i32,
     pub max: i32,
@@ -163,14 +165,14 @@ pub struct Health {
 // -----------------------------------------------------------------------------
 
 /// One usable skill id and remaining charges.
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct UsableSkillStack {
     pub skill_id: String,
     pub charges: u32,
 }
 
 /// Skill ids for permanent vs usable stacks + equipped weapon id. Populated from data + [`crate::skills::seed_demo_backpack`].
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Backpack {
     pub usable: Vec<UsableSkillStack>,
     pub permanent: Vec<String>,

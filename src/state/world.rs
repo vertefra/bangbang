@@ -19,7 +19,18 @@
 ///
 /// ## Path
 /// Chosen archetype (`"bandit"`, `"sheriff"`, `"renegade"`). `None` = neutral (no choice yet).
+use serde::{Deserialize, Serialize};
 use std::collections::HashSet;
+
+/// Serializable copy of [`WorldState`] for save files (see `save_game` module).
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct WorldStateSnapshot {
+    pub path: Option<String>,
+    pub flags: Vec<String>,
+    pub active_quests: Vec<String>,
+    pub completed_quests: Vec<String>,
+}
+
 #[derive(Debug, Default)]
 pub struct WorldState {
     /// Chosen archetype path, e.g. "bandit", "sheriff", "renegade". None = neutral.
@@ -35,6 +46,23 @@ pub struct WorldState {
 impl WorldState {
     pub fn new() -> Self {
         Self::default()
+    }
+
+    pub fn to_snapshot(&self) -> WorldStateSnapshot {
+        WorldStateSnapshot {
+            path: self.path.clone(),
+            flags: self.flags.iter().cloned().collect(),
+            active_quests: self.active_quests.iter().cloned().collect(),
+            completed_quests: self.completed_quests.iter().cloned().collect(),
+        }
+    }
+
+    /// Replace all story state from a save (used after load).
+    pub fn restore_from_snapshot(&mut self, s: WorldStateSnapshot) {
+        self.path = s.path;
+        self.flags = s.flags.into_iter().collect();
+        self.active_quests = s.active_quests.into_iter().collect();
+        self.completed_quests = s.completed_quests.into_iter().collect();
     }
 
     // ── Path ──
