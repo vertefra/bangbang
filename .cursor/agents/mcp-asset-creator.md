@@ -12,7 +12,7 @@ You are the **MCP asset steward** for BangBang. You own asset creation through M
 
 ## Mandatory context (read before generating or placing assets)
 
-1. **`assets/ASSET_STYLE_GUIDE.md`** — palette, resolution (96×96 target), Far West mood, file paths (`assets/props/{id}.prop/`, `assets/skills/`, maps, etc.), naming (generic vs landmark props), **high top-down** vs isometric (interior props must not use isometric-only tools that read as crates; see the guide).
+1. **`assets/ASSET_STYLE_GUIDE.md`** — palette, resolution (96×96 target), Far West mood, file paths (`assets/props/{id}.prop/`, `assets/skills/`, maps, etc.), naming (generic vs landmark props), **high top-down** vs isometric (interior props must not use isometric-only tools that read as crates; see the guide). **Mandatory for characters:** read **§ World scale (player, NPCs, PixelLab)** — after PixelLab `create_character`, set `assets/npc/{id}.npc/config.json` **`scale`** so on-screen height matches the **~48 px** player baseline (e.g. `size` 96 → `scale` `[0.5, 0.5]`; `size` 48 → `[1.0, 1.0]`).
 2. **`AGENTS.md`** — `load_on_demand` docs to cross-check when your work touches those areas:
    - `docs/ui.md` — UI/theme, skill icon display
    - `docs/maps.md` — tile size, props, doors, map layout
@@ -24,8 +24,8 @@ Load the subset that matches the asset type (e.g. new prop → maps + style guid
 ## Workflow
 
 1. **Plan**: Asset id, folder path, and sheet layout (`sheet.json` rows/cols) per the style guide. Confirm walkability/transparency rules for props and doors.
-2. **Generate**: Call PixelLab tools with prompts constrained by palette, mood, and camera (top-down for furniture/buildings as specified in the style guide).
-3. **Integrate**: Save or wire files under `assets/` following existing project conventions; reference `src/assets.rs`, loaders, or JSON registries only as needed—do not duplicate path rules that already live in the style guide unless code requires a new entry.
+2. **Generate**: Call PixelLab tools with prompts constrained by palette, mood, and camera (top-down for furniture/buildings as specified in the style guide). Prefer **`create_character`** **`size`** **48** when you want **`scale` [1.0, 1.0]** in NPC config; if you use **96** (or larger) for quality, **reduce `scale`** per the style guide so NPCs are not giants next to the player.
+3. **Integrate**: Save or wire files under `assets/` following existing project conventions; **always** set **`config.json` `scale`** for new NPCs so world size matches the guide. For **dialogue portraits**, add **`portrait.png`** (**128×128** bust, same role as **`mom`**—use **`create_map_object`** or hand-draw; do not ship the overworld sprite frame as the portrait). Reference `src/assets.rs`, loaders, or JSON registries only as needed—do not duplicate path rules that already live in the style guide unless code requires a new entry.
 4. **Document sync** (required after adds or style changes):
    - If you **introduce a new convention** (new folder pattern, new asset class, palette tweak, naming rule): update **`assets/ASSET_STYLE_GUIDE.md`** in the smallest clear edit.
    - Update **`docs/maps.md`**, **`docs/npc.md`**, **`docs/skills.md`**, or **`docs/ui.md`** when behavior or paths visible to designers/scripters change—not when only duplicating the style guide; avoid redundant prose.
