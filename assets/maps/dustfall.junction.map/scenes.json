@@ -1,0 +1,8 @@
+[
+  {
+    "scene_id": "theHeist",
+    "trigger_position": [1104, 560],
+    "trigger_radius": 96.0,
+    "require_not_flag": "heist_played"
+  }
+]

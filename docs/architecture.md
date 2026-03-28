@@ -31,7 +31,7 @@ src/
 ├── assets.rs            # AssetStore (cached textures/fonts)
 ├── ecs/
 │   ├── mod.rs           # Core ECS types (Transform, Sprite, AnimationState...)
-│   ├── components.rs    # Game components (Health, Backpack)
+│   ├── components.rs    # Game components (Health, Backpack, SceneActor + SceneActorMotion for cutscene world sprites)
 │   └── world.rs         # setup_world, map transition helpers (carryover, despawn all)
 ├── dialogue/
 │   ├── mod.rs           # Execution engine (current_display, advance)
@@ -40,7 +40,7 @@ src/
 ├── skills/
 │   ├── mod.rs           # Application logic (deal_damage, heal)
 │   ├── defs.rs          # json schema (SkillDef)
-│   ├── registry.rs      # SkillRegistry (auto-discovers assets/skills/*.json)
+│   ├── registry.rs      # SkillRegistry (auto-discovers assets/skills/{id}.skill/config.json)
 │   └── backpack_view.rs # Hotkeys, UI formatting
 ├── gpu/
 │   ├── renderer.rs      # GpuRenderer: wgpu pipelines, new/resize/upload, draw_frame orchestration
@@ -62,9 +62,13 @@ src/
 ├── render/
 │   ├── mod.rs           # Wang autotile lookup (WANG16_SHEET_LUT), facing→sprite row, render scale types
 │   └── color.rs         # sRGB → packed u32, packed RGB → linear (GPU path)
+├── scene/
+│   ├── mod.rs           # SceneCache (load-on-demand)
+│   ├── defs.rs          # SceneDef, SceneStep (Dialogue, GiveSkill, SetFlag)
+│   └── loader.rs        # load(id) → Result<SceneDef, SceneLoadError>
 └── state/
     ├── mod.rs           # Combines AppState, InputState, WorldState
-    ├── app.rs           # Overworld | Dialogue | Duel enum
+    ├── app.rs           # Overworld | Dialogue | Duel | Scene enum
     ├── input.rs         # Raw window input translator (key strokes → semantic actions)
     ├── overworld.rs     # Movement & proximity → NpcInteraction
     ├── map_transition.rs # Door rects → poll_map_door_transition (optional require_state / deny_message)
@@ -92,7 +96,7 @@ flowchart LR
     AppUpdate -->|submit| Gpu
 ```
 
-1. **Bootstrap**: `main` loads `GameConfig` from `assets/game.json` (start map id, optional demo backpack seed, window title), `render_settings::load()`, then `load_map` for the configured start map. `SkillRegistry::load_builtins` requires a readable `assets/skills/` with at least one `.json` skill. Maps to `hecs::World` and optionally seeds player inventory.
+1. **Bootstrap**: `main` loads `GameConfig` from `assets/game.json` (start map id, optional demo backpack seed, window title), `render_settings::load()`, then `load_map` for the configured start map. `SkillRegistry::load_builtins` requires a readable `assets/skills/` with at least one `{id}.skill/config.json`. Maps to `hecs::World` and optionally seeds player inventory.
 2. **Update vs Render**: `RedrawRequested` triggers `App::update(dt)`, which consumes inputs, runs ECS physics/logic, handles dialogue tree states, and optionally prepares side-channel UI data like `BackpackPanelLines`. Afterwards, `App::draw()` builds a `gpu::FrameContext` and calls `gpu::GpuRenderer::draw_frame(&FrameContext { ... })`. For **minimal always-on HUD** (e.g. player HP bar), the renderer may perform a **read-only** `World` query to read a few scalars; avoid building large UI models or running game logic there (see [docs/antipatterns.md](antipatterns.md)).
 3. **GPU Render Passes**: The renderer runs distinct batches (Tilemap → Entities → optional debug borders → UI Overlays → Debug HUD text). The **entity pass** Y-sorts draw order: larger world **Y** (further “south”) draws later so the player can appear in front of building props when standing south of them. [`MapProp`](../src/ecs/components.rs) and [`DoorMarker`](../src/ecs/components.rs) use **sprite center** as the sort depth; actors use the **bottom** of the sprite quad (approximate feet).
 
@@ -110,5 +114,6 @@ See [docs/game.md](game.md) and [docs/ui.md](ui.md).
 1. **Explicit Errors**: All loading functions bubble `Result<T, E>` up to `main.rs`, preventing silent fallback cascades and making missing files extremely obvious.
 2. **Data-Driven Skills**: Adding a skill to `assets/skills/` is required at startup (empty or unreadable directory fails load). `SkillRegistry` also exposes iteration helpers for tools and future UI. 
 3. **Story-Driven Dialogue**: NPCs carry an `Npc` component mapped to a string `conversation_id`. The dialogue engine evaluates game `WorldState` dynamically (flags, paths, quests) and supports conversation-level gating via `require_state`. ECS components hold identities, not static string files.
-4. **Decoupled UI**: The `ui` module calculates generic layouts and parses themes. The ECS engine passes pre-formatted string lines to the GPU renderer for overlays such as dialogue and backpack. **Trivial HUD** (e.g. HP) may use a single read-only `(&Player, &Health)`-style query in the renderer; heavy formatting and stateful UI stay in `App::update()`.
-5. **Typed Interactions**: Overworld collisions bubble a strict `state::overworld::NpcInteraction` structure rather than sprawling native tuples, preventing parameter drift.
+4. **Data-Driven Scene Sequences**: `AppState::Scene` drives scripted sequences loaded from `assets/scenes/{id}.scene.json` (`src/scene/`). A scene is an ordered list of steps: `Dialogue` (typewriter NPC lines with optional portrait), `GiveSkill` (grant a skill to the player), and `SetFlag` (write a `WorldState` flag). Proximity triggers defined in `assets/maps/{map}.map/scenes.json` (`MapSceneTrigger`) auto-fire scenes when the player enters range. `SceneCache` loads definitions on demand.
+5. **Decoupled UI**: The `ui` module calculates generic layouts and parses themes. The ECS engine passes pre-formatted string lines to the GPU renderer for overlays such as dialogue and backpack. **Trivial HUD** (e.g. HP) may use a single read-only `(&Player, &Health)`-style query in the renderer; heavy formatting and stateful UI stay in `App::update()`.
+6. **Typed Interactions**: Overworld collisions bubble a strict `state::overworld::NpcInteraction` structure rather than sprawling native tuples, preventing parameter drift.

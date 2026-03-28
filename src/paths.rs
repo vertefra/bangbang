@@ -12,6 +12,11 @@ pub fn asset_root() -> PathBuf {
     PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("assets")
 }
 
+/// `assets/skills/{id}.skill/` — definition (`config.json`) and optional `skill_image.png`.
+pub fn skill_asset_dir(id: &str) -> PathBuf {
+    asset_root().join("skills").join(format!("{id}.skill"))
+}
+
 /// Single save slot: `~/.local/share/bangbang/save.json` when `HOME` is set (Unix), else `bangbang_save.json` in the current working directory.
 pub fn save_game_file() -> PathBuf {
     if let Ok(home) = std::env::var("HOME") {

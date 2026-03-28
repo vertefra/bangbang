@@ -1,12 +1,18 @@
 //! # App state (game mode)
 //!
-//! **High-level:** The top-level state machine: Overworld, Dialogue, or Duel. Overworld and
-//! Dialogue are implemented here; Duel remains a placeholder.
+//! **High-level:** The top-level state machine: Overworld, Dialogue, Scene, or Duel. Overworld and
+//! Dialogue are implemented here; Scene runs scripted cutscenes (dialogue steps, skill grants, flag
+//! sets); Duel remains a placeholder.
 
-use crate::constants::DIALOGUE_CHARS_PER_SEC;
+use crate::constants::{DIALOGUE_CHARS_PER_SEC, SCENE_TRIGGER_COOLDOWN_SECS};
 use crate::dialogue;
-use crate::ecs::World;
+use crate::ecs::{
+    despawn_scene_actors, face_scene_actors, sync_scene_actor_for_step, tick_scene_actor_animations,
+    tick_scene_actor_motion, World,
+};
 use crate::map::Tilemap;
+use crate::scene;
+use crate::skills;
 use crate::state::{InputState, WorldState};
 
 const MISSING_DIALOGUE_PLACEHOLDER: &str = "...";
@@ -14,11 +20,15 @@ const MISSING_DIALOGUE_PLACEHOLDER: &str = "...";
 /// Current game mode. **Rust:** An `enum` is a type that is exactly one of its variants; we'll match on it for mode-specific behaviour.
 /// `Overworld { last_near_npc }` tracks if player was near an NPC last frame so we only trigger dialogue when entering range, not when already standing there (e.g. after closing).
 /// `Dialogue` holds conversation state; dialogue module resolves current line and advance.
+/// `Scene` runs a scripted cutscene from `assets/scenes/{scene_id}.scene.json`.
 #[derive(Debug, Clone, PartialEq)]
 pub enum AppState {
     Overworld {
         last_near_npc: bool,
         backpack_open: bool,
+        /// Seconds remaining before scene proximity triggers may fire.
+        /// Prevents a scene from immediately re-triggering after it ends or after a map transition.
+        scene_trigger_cooldown: f32,
     },
     Dialogue {
         npc_id: String,
@@ -26,6 +36,16 @@ pub enum AppState {
         node_id: String,
         line_index: u32,
         /// Unicode scalar values (`char`) of the current line already revealed (typewriter).
+        stream_visible: u32,
+        stream_acc: f32,
+    },
+    Scene {
+        scene_id: String,
+        /// Index into `SceneDef::steps`.
+        step: usize,
+        /// Index into the current `Dialogue` step's `lines` vec.
+        line_index: u32,
+        /// Typewriter: chars of the current line already visible.
         stream_visible: u32,
         stream_acc: f32,
     },
@@ -37,6 +57,7 @@ impl Default for AppState {
         AppState::Overworld {
             last_near_npc: false,
             backpack_open: false,
+            scene_trigger_cooldown: SCENE_TRIGGER_COOLDOWN_SECS,
         }
     }
 }
@@ -84,12 +105,15 @@ impl AppState {
         world_state: &mut WorldState,
         dt: f32,
         tilemap: &Tilemap,
-        skill_registry: &crate::skills::SkillRegistry,
+        skill_registry: &skills::SkillRegistry,
         dialogue_cache: &mut dialogue::ConversationCache,
+        scene_triggers: &[crate::config::MapSceneTrigger],
+        scene_cache: &mut scene::SceneCache,
     ) {
         let AppState::Overworld {
             last_near_npc,
             backpack_open,
+            scene_trigger_cooldown,
         } = self
         else {
             unreachable!("update_overworld only called in Overworld");
@@ -138,6 +162,53 @@ impl AppState {
                 }
             }
             *last_near_npc = near_now;
+
+            // Decrement scene cooldown; extract bool so the borrow on scene_trigger_cooldown ends
+            // before any potential *self assignment below.
+            *scene_trigger_cooldown = (*scene_trigger_cooldown - dt).max(0.0);
+            let cooldown_expired = *scene_trigger_cooldown <= 0.0;
+
+            if cooldown_expired {
+                let player_pos = world
+                    .query::<(&crate::ecs::Player, &crate::ecs::Transform)>()
+                    .iter()
+                    .next()
+                    .map(|(_, (_, t))| t.position);
+
+                if let Some(pos) = player_pos {
+                    for trigger in scene_triggers {
+                        let trigger_pos = glam::Vec2::new(
+                            trigger.trigger_position[0],
+                            trigger.trigger_position[1],
+                        );
+                        if pos.distance(trigger_pos) > trigger.trigger_radius {
+                            continue;
+                        }
+                        if let Some(flag) = &trigger.require_not_flag {
+                            if world_state.has_flag(flag) {
+                                continue;
+                            }
+                        }
+                        if let Err(e) = scene_cache.get_or_load(&trigger.scene_id) {
+                            log::error!(
+                                "scene trigger {}: failed to load scene: {}",
+                                trigger.scene_id,
+                                e
+                            );
+                            continue;
+                        }
+                        let scene_id = trigger.scene_id.clone();
+                        *self = AppState::Scene {
+                            scene_id,
+                            step: 0,
+                            line_index: 0,
+                            stream_visible: 0,
+                            stream_acc: 0.0,
+                        };
+                        return;
+                    }
+                }
+            }
         }
     }
 
@@ -168,6 +239,7 @@ impl AppState {
             *self = AppState::Overworld {
                 last_near_npc: true,
                 backpack_open: false,
+                scene_trigger_cooldown: 0.0,
             };
             return;
         };
@@ -193,6 +265,7 @@ impl AppState {
                     *self = AppState::Overworld {
                         last_near_npc: true,
                         backpack_open: false,
+                        scene_trigger_cooldown: 0.0,
                     };
                 } else {
                     *node_id = result.node_id;
@@ -204,7 +277,118 @@ impl AppState {
         }
     }
 
-    /// One tick of game logic. Branches on state: Overworld (movement + maybe trigger dialogue), Dialogue (confirm to close), Duel (no-op).
+    fn update_scene(
+        &mut self,
+        world: &mut World,
+        input: &mut InputState,
+        world_state: &mut WorldState,
+        skill_registry: &skills::SkillRegistry,
+        scene_cache: &mut scene::SceneCache,
+        dt: f32,
+    ) {
+        let AppState::Scene {
+            scene_id,
+            step,
+            line_index,
+            stream_visible,
+            stream_acc,
+        } = self
+        else {
+            unreachable!("update_scene only called in Scene");
+        };
+
+        // Clone scene_id to release the borrow on self before any *self assignment below.
+        let scene_id_owned = scene_id.clone();
+
+        let scene_def = match scene_cache.get_or_load(&scene_id_owned) {
+            Ok(def) => def.clone(),
+            Err(e) => {
+                log::error!("scene {}: failed to load: {}", scene_id_owned, e);
+                despawn_scene_actors(world);
+                *self = AppState::Overworld {
+                    last_near_npc: false,
+                    backpack_open: false,
+                    scene_trigger_cooldown: SCENE_TRIGGER_COOLDOWN_SECS,
+                };
+                return;
+            }
+        };
+
+        sync_scene_actor_for_step(world, &scene_def, *step);
+        tick_scene_actor_motion(world, dt);
+        tick_scene_actor_animations(world, dt);
+        face_scene_actors(world);
+
+        // Non-Dialogue steps (GiveSkill, SetFlag) execute in a loop without waiting for a frame.
+        // Dialogue steps break out of the loop and wait for player input.
+        loop {
+            if *step >= scene_def.steps.len() {
+                despawn_scene_actors(world);
+                *self = AppState::Overworld {
+                    last_near_npc: false,
+                    backpack_open: false,
+                    scene_trigger_cooldown: SCENE_TRIGGER_COOLDOWN_SECS,
+                };
+                return;
+            }
+
+            match &scene_def.steps[*step] {
+                scene::SceneStep::Dialogue { lines, .. } => {
+                    let current_line = lines
+                        .get(*line_index as usize)
+                        .map(|s| s.as_str())
+                        .unwrap_or("");
+                    let line_char_count = current_line.chars().count() as u32;
+
+                    *stream_acc += dt * DIALOGUE_CHARS_PER_SEC;
+                    while *stream_visible < line_char_count && *stream_acc >= 1.0 {
+                        *stream_acc -= 1.0;
+                        *stream_visible += 1;
+                    }
+
+                    if input.confirm_pressed {
+                        input.confirm_pressed = false;
+                        if *stream_visible < line_char_count {
+                            *stream_visible = line_char_count;
+                            *stream_acc = 0.0;
+                        } else {
+                            *line_index += 1;
+                            if *line_index >= lines.len() as u32 {
+                                *step += 1;
+                                *line_index = 0;
+                                *stream_visible = 0;
+                                *stream_acc = 0.0;
+                                // Loop back to process the next step immediately.
+                                continue;
+                            } else {
+                                *stream_visible = 0;
+                                *stream_acc = 0.0;
+                            }
+                        }
+                    }
+                    // Dialogue always waits for the next frame.
+                    break;
+                }
+                scene::SceneStep::GiveSkill { skill_id } => {
+                    let skill_id = skill_id.clone();
+                    if let Err(e) = skills::give_skill(world, skill_registry, &skill_id) {
+                        log::error!("scene {}: give_skill {}: {}", scene_id_owned, skill_id, e);
+                    }
+                    *step += 1;
+                    continue;
+                }
+                scene::SceneStep::SetFlag { flag } => {
+                    let flag = flag.clone();
+                    world_state.set_flag(&flag);
+                    *step += 1;
+                    continue;
+                }
+            }
+        }
+    }
+
+    /// One tick of game logic. Branches on state: Overworld (movement + maybe trigger dialogue/scene),
+    /// Dialogue (confirm to close), Scene (scripted cutscene), Duel (no-op).
     /// Story state is passed so dialogue (and later choices) can set path or flags.
     pub fn update(
         &mut self,
@@ -213,8 +397,10 @@ impl AppState {
         world_state: &mut WorldState,
         dt: f32,
         tilemap: &Tilemap,
-        skill_registry: &crate::skills::SkillRegistry,
+        skill_registry: &skills::SkillRegistry,
         dialogue_cache: &mut dialogue::ConversationCache,
+        scene_triggers: &[crate::config::MapSceneTrigger],
+        scene_cache: &mut scene::SceneCache,
     ) {
         match self {
             AppState::Overworld { .. } => {
@@ -226,10 +412,15 @@ impl AppState {
                     tilemap,
                     skill_registry,
                     dialogue_cache,
+                    scene_triggers,
+                    scene_cache,
                 );
             }
             AppState::Dialogue { .. } => {
                 self.update_dialogue(input, world_state, dt, dialogue_cache);
+            }
+            AppState::Scene { .. } => {
+                self.update_scene(world, input, world_state, skill_registry, scene_cache, dt);
             }
             AppState::Duel => {}
         }

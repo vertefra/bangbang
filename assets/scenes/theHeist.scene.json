@@ -1,0 +1,33 @@
+{
+  "id": "theHeist",
+  "steps": [
+    {
+      "type": "dialogue",
+      "speaker": "Silas",
+      "portrait": "silas",
+      "lines": [
+        "Watch it, kid! I'm on a schedule.",
+        "Don't look at me like that — this gold is insured! Insurance is the real thief here!",
+        "(Silas flees. A metallic clink echoes as he drops something on the ground.)"
+      ]
+    },
+    {
+      "type": "dialogue",
+      "speaker": "Bank Owner",
+      "portrait": "bankOwner",
+      "lines": [
+        "Coward! Someone stop him!",
+        "Sighs... This town needs a Sheriff with some grit. Our current one is half-blind.",
+        "Is that his iron? Pick it up, kid. If you're going to the Old Mine to get that gold back, you'll need more than luck."
+      ]
+    },
+    {
+      "type": "give_skill",
+      "skill_id": "rustyPeacemaker"
+    },
+    {
+      "type": "set_flag",
+      "flag": "heist_played"
+    }
+  ]
+}

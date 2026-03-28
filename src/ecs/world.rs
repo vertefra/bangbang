@@ -24,10 +24,14 @@
 
 use hecs::World;
 
+use glam::Vec2;
+
 use super::components::{
-    AnimationState, Backpack, DoorMarker, Facing, Health, MapProp, Npc, Player, Sprite, SpriteSheet,
-    Transform,
+    AnimationKind, AnimationState, Backpack, Direction, DoorMarker, Facing, Health, MapProp, Npc,
+    Player, SceneActor, SceneActorMotion, Sprite, SpriteSheet, Transform,
 };
+use crate::constants::SCENE_ACTOR_SCALE_MULTIPLIER;
+use crate::scene::{SceneDef, SceneStep};
 use crate::{assets, map_loader::MapData};
 
 /// Starting LP for the player when there is no [`PlayerCarryover`] (first load or missing player).
@@ -175,5 +179,185 @@ pub fn setup_world(
                 character_id: sheet_id,
             },
         ));
+    }
+}
+
+// --- Scene actors (cutscene characters in the world) -------------------------------------------
+
+const SCENE_WALK_FPS: f32 = 8.0;
+const SCENE_WALK_FRAMES: u32 = 4;
+
+/// Converts a display name like `"Bank Owner"` to the asset folder id `bankOwner`.
+pub fn speaker_to_asset_id(speaker: &str) -> String {
+    let parts: Vec<&str> = speaker.split_whitespace().filter(|s| !s.is_empty()).collect();
+    if parts.is_empty() {
+        return "unknown".to_string();
+    }
+    let mut out = parts[0].to_lowercase();
+    for p in &parts[1..] {
+        let mut ch = p.chars();
+        if let Some(f) = ch.next() {
+            for c in f.to_uppercase() {
+                out.push(c);
+            }
+            out.extend(ch.flat_map(|c| c.to_lowercase()));
+        }
+    }
+    out
+}
+
+/// Remove all [`SceneActor`] entities (e.g. when a scene ends or the map reloads).
+pub fn despawn_scene_actors(world: &mut World) {
+    let to_remove: Vec<_> = world
+        .query::<&SceneActor>()
+        .iter()
+        .map(|(e, _)| e)
+        .collect();
+    for e in to_remove {
+        let _ = world.despawn(e);
+    }
+}
+
+fn direction_toward(from: Vec2, to: Vec2) -> Direction {
+    direction_from_vec2(to - from)
+}
+
+/// Facing from a direction vector (e.g. cutscene movement velocity).
+fn direction_from_vec2(d: Vec2) -> Direction {
+    if d.length_squared() < 1e-4 {
+        return Direction::Down;
+    }
+    if d.y.abs() >= d.x.abs() {
+        if d.y >= 0.0 {
+            Direction::Down
+        } else {
+            Direction::Up
+        }
+    } else if d.x >= 0.0 {
+        Direction::Right
+    } else {
+        Direction::Left
+    }
+}
+
+/// Spawn or keep the cutscene character for the current dialogue step (matched by `SpriteSheet::character_id`).
+pub fn sync_scene_actor_for_step(world: &mut World, scene_def: &SceneDef, step: usize) {
+    let desired_id: Option<String> = match scene_def.steps.get(step) {
+        Some(SceneStep::Dialogue { portrait, speaker, .. }) => Some(
+            portrait
+                .as_deref()
+                .filter(|s| !s.is_empty())
+                .map(std::string::ToString::to_string)
+                .unwrap_or_else(|| speaker_to_asset_id(speaker)),
+        ),
+        _ => None,
+    };
+
+    let Some(desired_id) = desired_id else {
+        despawn_scene_actors(world);
+        return;
+    };
+
+    for (_, (_, ss)) in world.query::<(&SceneActor, &SpriteSheet)>().iter() {
+        if ss.character_id == desired_id {
+            return;
+        }
+    }
+
+    despawn_scene_actors(world);
+
+    let cfg = match crate::map_loader::load_character_npc_config(&desired_id) {
+        Ok(c) => c,
+        Err(e) => {
+            log::error!("scene actor '{}': {}", desired_id, e);
+            return;
+        }
+    };
+
+    let player_pos = match world.query::<(&Player, &Transform)>().iter().next() {
+        Some((_, (_, t))) => t.position,
+        None => {
+            log::error!("scene actor: no player");
+            return;
+        }
+    };
+
+    // Spawn offset + flee velocity: Silas starts west and runs east across view; others stand by the player.
+    let (spawn_offset, velocity) = match desired_id.as_str() {
+        "silas" => (
+            Vec2::new(-340.0, -28.0),
+            Vec2::new(220.0, 32.0),
+        ),
+        "bankOwner" => (Vec2::new(150.0, -52.0), Vec2::ZERO),
+        _ => {
+            let side = if step % 2 == 0 { 1.0 } else { -1.0 };
+            (
+                Vec2::new(side * 140.0, -48.0),
+                Vec2::ZERO,
+            )
+        }
+    };
+    let pos = player_pos + spawn_offset;
+    let scale = Vec2::from_array(cfg.scale) * SCENE_ACTOR_SCALE_MULTIPLIER;
+    let initial_facing = if velocity.length_squared() > 1.0 {
+        direction_from_vec2(velocity)
+    } else {
+        direction_toward(pos, player_pos)
+    };
+
+    world.spawn((
+        SceneActor,
+        SceneActorMotion { velocity },
+        Transform {
+            position: pos,
+            scale,
+        },
+        Sprite {
+            color: cfg.color,
+        },
+        SpriteSheet {
+            character_id: desired_id,
+        },
+        Facing(initial_facing),
+        AnimationState {
+            kind: AnimationKind::Walk,
+            frame_index: 0,
+            timer: 0.0,
+        },
+    ));
+}
+
+/// Move cutscene actors by [`SceneActorMotion::velocity`] each frame.
+pub fn tick_scene_actor_motion(world: &mut World, dt: f32) {
+    for (_, (_, transform, motion)) in
+        world.query_mut::<(&SceneActor, &mut Transform, &SceneActorMotion)>()
+    {
+        transform.position += motion.velocity * dt;
+    }
+}
+
+/// Advance walk animation for cutscene characters (same cadence as player walk).
+pub fn tick_scene_actor_animations(world: &mut World, dt: f32) {
+    for (_, (_, anim)) in world.query_mut::<(&SceneActor, &mut AnimationState)>() {
+        anim.kind = AnimationKind::Walk;
+        anim.timer += dt;
+        anim.frame_index = ((anim.timer * SCENE_WALK_FPS) as u32) % SCENE_WALK_FRAMES;
+    }
+}
+
+/// Update cutscene facing: movers face their velocity; stationary actors face the player.
+pub fn face_scene_actors(world: &mut World) {
+    let player_pos = match world.query::<(&Player, &Transform)>().iter().next() {
+        Some((_, (_, t))) => t.position,
+        None => return,
+    };
+    for (_, (_, transform, facing, motion)) in world
+        .query_mut::<(&SceneActor, &Transform, &mut Facing, &SceneActorMotion)>()
+    {
+        facing.0 = if motion.velocity.length_squared() > 25.0 {
+            direction_from_vec2(motion.velocity)
+        } else {
+            direction_toward(transform.position, player_pos)
+        };
     }
 }

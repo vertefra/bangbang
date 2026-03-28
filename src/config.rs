@@ -81,6 +81,7 @@ impl MapDoor {
 }
 
 /// Character definition: `assets/npc/{id}.npc/config.json` preferred, else `assets/npc/{id}.npc.json`.
+/// Sprite sheets and portraits for that id live in the same **`{id}.npc/`** folder (see `docs/npc.md`).
 ///
 /// Unknown JSON keys are ignored by `serde`. There is **no** `position` field here — use the map’s `npc.json`.
 #[derive(Debug, Clone, Deserialize)]
@@ -114,6 +115,19 @@ fn default_scale() -> [f32; 2] {
 
 fn default_color() -> [f32; 4] {
     [0.2, 0.6, 1.0, 1.0]
+}
+
+/// One scene proximity trigger in `assets/maps/{id}.map/scenes.json`.
+///
+/// When the player is within `trigger_radius` world units of `trigger_position`, the named
+/// scene starts. `require_not_flag` gates repeat plays: if the flag is set the trigger is skipped.
+#[derive(Debug, Clone, serde::Deserialize)]
+pub struct MapSceneTrigger {
+    pub scene_id: String,
+    pub trigger_position: [f32; 2],
+    pub trigger_radius: f32,
+    #[serde(default)]
+    pub require_not_flag: Option<String>,
 }
 
 /// Top-level game bootstrap: `assets/game.json`.

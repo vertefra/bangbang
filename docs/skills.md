@@ -4,7 +4,7 @@ This document explains the current skill system in `bangbang`.
 
 ## Goal
 
-Skills are data-driven definitions loaded from `assets/skills/*.json`.
+Skills are data-driven definitions loaded from **`assets/skills/{id}.skill/config.json`** (one folder per skill id, same idea as **`assets/npc/{id}.npc/`**). **Weapons** are not a separate asset type: they are permanent skills with `subcategory: "weapon"` and use the same `{id}.skill/` layout.
 Runtime state (HP, inventory, charges) stays in ECS components.
 
 ## Data model
@@ -26,12 +26,13 @@ Each effect step contains:
 
 Current built-in skills:
 
-- `sidearm` (`permanent` + `weapon`) -> `deal_damage` to `opponent`
-- `beer` (`usable` + `consumable`) -> `heal` on `caster`
+- `sidearm` (`permanent` + `weapon`) → `deal_damage` to `opponent` (amount 2)
+- `beer` (`usable` + `consumable`) → `heal` on `caster`
+- `rustyPeacemaker` (`permanent` + `weapon`) → `deal_damage` to `opponent` (amount 3)
 
 ## Loading and validation
 
-`SkillRegistry::load_builtins()` reads `assets/skills/` and loads every `*.json` file stem as an id. Startup **fails** if the directory cannot be read or if no skill JSONs load (deployment errors surface immediately). The registry exposes `iter`, `ids`, `contains`, and `len` for listing and validation.
+`SkillRegistry::load_builtins()` reads `assets/skills/` and loads every subdirectory named `{id}.skill/` that contains `config.json`. Startup **fails** if the directory cannot be read or if no skills load (deployment errors surface immediately). The registry exposes `iter`, `ids`, `contains`, and `len` for listing and validation.
 
 `SkillDef::load()` validates:
 
@@ -96,9 +97,20 @@ Helpers: `weapon_ids_in_order`, `passive_ids_in_order`, `normalize_equipped_weap
 
 ### Skill icon images
 
-Each skill may supply a 96×96 RGBA PNG at `assets/skills/{id}.skill_image.png`. The asset store loads it via `AssetStore::get_skill_image(skill_id)` (key: `skill_image_key(id)` = `"skill_icon:{id}"`). The renderer draws it as a square icon (slot-height × slot-height) to the left of the slot label in the backpack panel. Missing images are silently skipped (text only).
+Each skill may supply a 96×96 RGBA PNG at **`assets/skills/{id}.skill/skill_image.png`**. The asset store loads it via `AssetStore::get_skill_image(skill_id)` (key: `skill_image_key(id)` = `"skill_icon:{id}"`). The renderer draws it as a square icon (slot-height × slot-height) to the left of the slot label in the backpack panel. Missing images are silently skipped (text only).
 
-Current icons: `sidearm.skill_image.png`, `beer.skill_image.png`.
+Current icons: `sidearm.skill/skill_image.png`, `beer.skill/skill_image.png`, `rustyPeacemaker.skill/skill_image.png`.
+
+## Runtime skill grants
+
+`give_skill(world, registry, skill_id) -> Result<(), String>` in `src/skills/backpack_runtime.rs` grants a skill to the player at runtime:
+
+1. Validates the skill exists in the registry (fails explicitly if not).
+2. Finds the player entity (fails explicitly if not found).
+3. Adds `skill_id` to `Backpack.permanent` — idempotent (no duplicate entries inserted).
+4. Auto-equips as `equipped_weapon_id` if the skill has `subcategory == "weapon"` and no weapon is currently equipped.
+
+This is called from `AppState::Scene` when a `GiveSkill` step is reached. Skills are awarded automatically by scene steps — there is no separate proximity pickup entity; the scene itself is the trigger (simpler, no new entity type needed).
 
 ## ECS boundary
 

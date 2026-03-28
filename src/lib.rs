@@ -20,6 +20,7 @@ pub mod paths;
 pub mod render;
 pub mod render_settings;
 pub mod save_game;
+pub mod scene;
 pub mod skills;
 pub mod state;
 pub mod ui;

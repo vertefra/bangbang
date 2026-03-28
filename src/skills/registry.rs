@@ -10,9 +10,10 @@ pub struct SkillRegistry {
 }
 
 impl SkillRegistry {
-    /// Load all skills found in the `assets/skills/` directory.
+    /// Load all skills found under `assets/skills/` as folders named `{id}.skill/` with `config.json`.
     ///
-    /// Fails if the directory cannot be read or if no `*.json` skill definitions were loaded.
+    /// Fails if the directory cannot be read or if no skill definitions were loaded.
+    /// **Weapons** are permanent skills with `subcategory == "weapon"` — same folder layout as other skills.
     pub fn load_builtins() -> Result<Self, String> {
         let skills_dir = crate::paths::asset_root().join("skills");
         let entries = std::fs::read_dir(&skills_dir).map_err(|e| {
@@ -33,18 +34,22 @@ impl SkillRegistry {
                 )
             })?;
             let path = entry.path();
-            if path.extension().map_or(false, |ext| ext == "json") {
-                let Some(id) = path.file_stem().and_then(|s| s.to_str()) else {
-                    continue;
-                };
-                let def = SkillDef::load(id)?;
-                defs.insert(id.to_string(), def);
+            if !path.is_dir() {
+                continue;
             }
+            let Some(name) = path.file_name().and_then(|s| s.to_str()) else {
+                continue;
+            };
+            let Some(id) = name.strip_suffix(".skill") else {
+                continue;
+            };
+            let def = SkillDef::load(id)?;
+            defs.insert(id.to_string(), def);
         }
 
         if defs.is_empty() {
             return Err(format!(
-                "no skill definitions loaded from {} (expected at least one *.json file)",
+                "no skill definitions loaded from {} (expected at least one `<id>.skill/config.json`)",
                 skills_dir.display()
             ));
         }

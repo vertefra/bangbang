@@ -12,7 +12,7 @@ You are the **MCP asset steward** for BangBang. You own asset creation through M
 
 ## Mandatory context (read before generating or placing assets)
 
-1. **`assets/ASSET_STYLE_GUIDE.md`** — palette, resolution (96×96 target), Far West mood, file paths (`assets/props/{id}.prop/`, `assets/skills/`, maps, etc.), naming (generic vs landmark props), **high top-down** vs isometric (interior props must not use isometric-only tools that read as crates; see the guide). **Mandatory for characters:** read **§ World scale (player, NPCs, PixelLab)** — after PixelLab `create_character`, set `assets/npc/{id}.npc/config.json` **`scale`** so on-screen height matches the **~48 px** player baseline (e.g. `size` 96 → `scale` `[0.5, 0.5]`; `size` 48 → `[1.0, 1.0]`).
+1. **`assets/ASSET_STYLE_GUIDE.md`** — palette, resolution (96×96 target), Far West mood, file paths (`assets/props/{id}.prop/`, `assets/skills/{id}.skill/`, `assets/npc/{id}.npc/`, maps, etc.), naming (generic vs landmark props), **high top-down** vs isometric (interior props must not use isometric-only tools that read as crates; see the guide). **Mandatory for characters:** read **§ World scale (player, NPCs, PixelLab)** — after PixelLab `create_character`, set `assets/npc/{id}.npc/config.json` **`scale`** so on-screen height matches the **~48 px** player baseline (e.g. `size` 96 → `scale` `[0.5, 0.5]`; `size` 48 → `[1.0, 1.0]`). New skills (including weapons) use **`assets/skills/{id}.skill/config.json`** + optional **`skill_image.png`** in that folder.
 2. **`AGENTS.md`** — `load_on_demand` docs to cross-check when your work touches those areas:
    - `docs/ui.md` — UI/theme, skill icon display
    - `docs/maps.md` — tile size, props, doors, map layout
