@@ -172,6 +172,16 @@ impl std::fmt::Display for MapLoadError {
     }
 }
 
+impl std::error::Error for MapLoadError {
+    fn source(&self) -> Option<&(dyn std::error::Error + 'static)> {
+        match self {
+            Self::Io(e, _) => Some(e),
+            Self::Json(e, _) => Some(e),
+            Self::InvalidTiles(_, _, _) | Self::MissingPalette(_) => None,
+        }
+    }
+}
+
 /// Load map by id. Reads `map.json`, optional `npc.json`, and optional `doors.json` under `assets/maps/{id}.map/`.
 pub fn load_map(id: &str) -> Result<MapData, MapLoadError> {
     let dir = map_dir(id);
@@ -366,6 +376,27 @@ mod tests {
         assert!(
             d.props.iter().any(|p| p.id == "billyHouse"),
             "props.json should list billyHouse for PixelLab house art"
+        );
+        for id in [
+            "clinic",
+            "sheriff",
+            "bank",
+            "saloon",
+            "emporium",
+            "hitchPost",
+            "waterTrough",
+            "barrels",
+            "cactus",
+        ] {
+            assert!(
+                d.props.iter().any(|p| p.id == id),
+                "dustfall.junction props.json should list {id}"
+            );
+        }
+        assert_eq!(
+            d.props.iter().filter(|p| p.id == "cactus").count(),
+            1,
+            "dustfall.junction should place at least one cactus instance"
         );
     }
 

@@ -49,12 +49,12 @@ The loader tries **`{id}.npc/config.json` first**, then falls back to **`{id}.np
 
 [`ecs::world::setup_world`](../src/ecs/world.rs) spawns each NPC with `Npc { id, conversation_id }`, `Transform`, `Sprite`, `SpriteSheet { character_id: id }`, `Facing`, and `Health`.
 
-Current default health is **10 / 10** for spawned NPCs unless a later gameplay system overrides it.
+**NPCs** default to **10 / 10** health at spawn unless overridden. The **player** cold-start maximum is **5 / 5** (see [game.md](game.md) — Current state).
 
 ## Dialogue
 
 - Files: **`assets/dialogue/{conversation_id}.json`**
-- Shape: `start` (string) and `nodes` (object keyed by id). Each node may use `line` or `lines`, optional `next`, `branches`, `effects`. Types live in `src/dialogue/tree.rs`.
+- Shape: `start` (string) and `nodes` (object keyed by id). Each node may use `line` or `lines`, optional `next`, `branches`, `effects`. At load, `line` (if present) is stored as a single-element `lines` list (legacy: it overrides a `lines` array). Types live in `src/dialogue/tree.rs`.
 - **Conversation Gating**: Conversations can define a top-level `"require_state": "condition"` and `"default_line": "Fallback text"`.
   - If the player's game state doesn't match `require_state`, the full conversation won't open; instead a one-shot fallback dialogue using `default_line` is shown.
   - Omit or set `require_state` to `null` to bypass gating.

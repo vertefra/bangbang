@@ -4,6 +4,12 @@
 //! Player gets `Facing` and `AnimationState` (for direction and idle/walk); NPCs get `Facing` only.
 //! Called from `main` after loading a map and after map transitions.
 //!
+//! ## Player HP vs NPC HP
+//!
+//! The player spawns at **5 / 5** LP on first load ([`DEFAULT_PLAYER_HEALTH`]). NPCs use **10 / 10**
+//! ([`DEFAULT_ACTOR_HEALTH`]). After a map change, [`PlayerCarryover`] restores the player’s prior
+//! backpack and [`Health`] when present; otherwise the player gets [`DEFAULT_PLAYER_HEALTH`] again.
+//!
 //! ## NPC spawn
 //!
 //! For each `(character_id, npc)` in [`crate::map_loader::MapData::npcs`], spawns an entity with
@@ -24,6 +30,13 @@ use super::components::{
 };
 use crate::{assets, map_loader::MapData};
 
+/// Starting LP for the player when there is no [`PlayerCarryover`] (first load or missing player).
+const DEFAULT_PLAYER_HEALTH: Health = Health {
+    current: 5,
+    max: 5,
+};
+
+/// Starting HP for spawned NPCs. Placeholder — later, per-character values may load from config.
 const DEFAULT_ACTOR_HEALTH: Health = Health {
     current: 10,
     max: 10,
@@ -63,7 +76,9 @@ pub fn setup_world(
         .as_ref()
         .map(|c| c.backpack.clone())
         .unwrap_or_default();
-    let health = carryover.map(|c| c.health).unwrap_or(DEFAULT_ACTOR_HEALTH);
+    let health = carryover
+        .map(|c| c.health)
+        .unwrap_or(DEFAULT_PLAYER_HEALTH);
 
     world.spawn((
         Player,
@@ -143,11 +158,15 @@ pub fn setup_world(
             continue;
         }
         let [x, y, w, h] = door.rect;
+        // Non-uniform scale distorts door art (e.g. 48×48 sheet stretched into 64×32). Fit inside
+        // the rect with uniform scale and align the sprite bottom to the rect bottom (floor line).
+        let uniform = (w / fw).min(h / fh);
+        let drawn_h = fh * uniform;
         world.spawn((
             DoorMarker,
             Transform {
-                position: glam::Vec2::new(x + w * 0.5, y + h * 0.5),
-                scale: glam::Vec2::new(w / fw, h / fh),
+                position: glam::Vec2::new(x + w * 0.5, y + h - drawn_h * 0.5),
+                scale: glam::Vec2::splat(uniform),
             },
             Sprite {
                 color: [1.0, 1.0, 1.0, 1.0],

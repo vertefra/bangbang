@@ -2,15 +2,17 @@
   {
     "rect": [160, 32, 64, 32],
     "to_map": "mumhome.secondFloor",
-    "spawn": [160, 252],
+    "spawn": [160, 250],
     "require_confirm": false,
     "prop": "south"
   },
   {
     "rect": [160, 288, 64, 32],
     "to_map": "dustfall.junction",
-    "spawn": [272, 546],
+    "spawn": [240, 600],
     "require_confirm": false,
-    "prop": "none"
+    "prop": "none",
+    "require_state": "flag:mom_intro_done",
+    "deny_message": "Your mom wants to talk to you"
   }
 ]

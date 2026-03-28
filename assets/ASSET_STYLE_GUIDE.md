@@ -58,13 +58,21 @@ Palette is limited and shared across tiles, characters, and props for a cohesive
 - **Animation**: Idle + walk (4 or 8 directions if needed). Frame count and layout per `sheet.json` (rows/cols).
 - **Consistency**: Same pixel scale as tiles; same outline style (all with or all without).
 
+## Prop and asset ids (naming)
+- **Reuse generic ids** for furniture, clutter, and anything that could appear in multiple interiors or towns: `bed`, `table`, `dresser`, `stove`, `cactus`, `barrels` — not character- or quest-tied names like `mumBed`.
+- **Named landmark props** (unique buildings tied to one place) may use a descriptive id (`billyHouse`, `dustfallSaloon`) when a generic name would be misleading. When in doubt for small reusable props, stay generic even if only one map references them today.
+
+## Top-down furniture vs isometric generators
+- Interior props must match the **high top-down** camera used with wang interior tilesets. Tools that only emit **isometric cubes** (e.g. PixelLab MCP `create_isometric_tile`) usually read as **crates/blocks**, not beds or dressers — use orthographic top-down art instead.
+
 ## File layout
 - **Characters**: `assets/characters/{id}/` — `sheet.png`, `sheet.json`.
 - **NPCs**: `assets/npc/{id}.npc/` or `assets/npc/{id}.npc.json` plus sprites as referenced.
 - **Tiles**: `assets/tiles/` (or per-map tile sets as used by map loader).
 - **Maps**: `assets/maps/{id}.map/` — `map.json`, `npc.json`, optional `props.json`; art in same folder or shared tiles.
-- **Props (buildings, large objects)**: `assets/props/{id}.prop/` — `sheet.png`, `sheet.json` (grid). Referenced from map `props.json` by `id`; prefer camelCase ids like `billyHouse`.
+- **Props (buildings, large objects)**: `assets/props/{id}.prop/` — `sheet.png`, `sheet.json` (grid). Referenced from map `props.json` by `id`. Use **generic** functional names for reusable props (`bed`, `dresser`); camelCase for multi-word ids (`billyHouse` for a named structure only when it is a specific landmark).
 - **Map doors (transitions)**: `doors.json` field **`prop`** → `assets/props/{id}.door/` by convention (for example `"south"` → `assets/props/south.door/`, `"southHeavy"` → `assets/props/southHeavy.door/`). Use **`"none"`** or omit the field for no sprite when the doorway is already drawn on a building prop or tiles. Same palette/outline rules as buildings.
+- **Skill icons**: `assets/skills/{id}.skill_image.png` — 96×96 RGBA PNG (transparent background). Rendered in the backpack panel as a square icon (scaled to slot height). Same pixel-art style and palette as characters; single item centered on a transparent bg.
 
 ---
 

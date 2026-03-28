@@ -291,6 +291,30 @@ pub fn dialogue_portrait_asset_key(npc_id: &str) -> String {
     format!("{npc_id}__dialogue_portrait")
 }
 
+/// Cache key for a skill icon image (`assets/skills/{id}.skill_image.png`).
+pub fn skill_image_key(skill_id: &str) -> String {
+    format!("skill_icon:{skill_id}")
+}
+
+fn load_skill_image(skill_id: &str) -> Option<LoadedSheet> {
+    let path = assets_dir()
+        .join("skills")
+        .join(format!("{skill_id}.skill_image.png"));
+    let (pixels, width, height) = load_png(&path)?;
+    if width == 0 || height == 0 {
+        return None;
+    }
+    Some(LoadedSheet {
+        pixels,
+        width,
+        height,
+        frame_width: width,
+        frame_height: height,
+        rows: 1,
+        cols: 1,
+    })
+}
+
 /// Load optional dialogue portrait: tries `assets/npc/{id}.npc/portrait.png` then `assets/characters/{id}/portrait.png`.
 /// Whole image is one frame (`rows`/`cols` = 1).
 pub fn load_dialogue_portrait(id: &str) -> Option<LoadedSheet> {
@@ -344,6 +368,17 @@ impl AssetStore {
         self.sheets.get(id)
     }
 
+    /// Icon image for a skill, from `assets/skills/{id}.skill_image.png`. Cached; None if missing.
+    pub fn get_skill_image(&mut self, skill_id: &str) -> Option<&LoadedSheet> {
+        let key = skill_image_key(skill_id);
+        if !self.sheets.contains_key(&key) {
+            if let Some(sheet) = load_skill_image(skill_id) {
+                self.sheets.insert(key.clone(), sheet);
+            }
+        }
+        self.sheets.get(&key)
+    }
+
     /// Dedicated dialogue portrait for `npc_id`, if present on disk. Cached; misses are remembered per id.
     pub fn get_dialogue_portrait_sheet(&mut self, npc_id: &str) -> Option<&LoadedSheet> {
         let key = dialogue_portrait_asset_key(npc_id);
@@ -384,6 +419,16 @@ mod tileset_tests {
             (s.cols, s.rows, s.frame_width, s.frame_height),
             (4, 4, 32, 32),
             "128² wang sheets must use 32px frames; 16px default would be 8×8 and break indices"
+        );
+    }
+
+    #[test]
+    fn farwest_ground_is_four_by_four_at_32px() {
+        let s = load_tileset("farwest_ground", None).expect("load farwest_ground");
+        assert_eq!(
+            (s.cols, s.rows, s.frame_width, s.frame_height),
+            (4, 4, 32, 32),
+            "dustfall.junction uses farwest_ground; grid must match wang LUT in render/mod.rs"
         );
     }
 

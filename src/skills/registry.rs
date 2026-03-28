@@ -11,36 +11,67 @@ pub struct SkillRegistry {
 
 impl SkillRegistry {
     /// Load all skills found in the `assets/skills/` directory.
+    ///
+    /// Fails if the directory cannot be read or if no `*.json` skill definitions were loaded.
     pub fn load_builtins() -> Result<Self, String> {
         let skills_dir = crate::paths::asset_root().join("skills");
-        let mut defs = HashMap::new();
+        let entries = std::fs::read_dir(&skills_dir).map_err(|e| {
+            format!(
+                "failed to read skills directory {}: {}",
+                skills_dir.display(),
+                e
+            )
+        })?;
 
-        match std::fs::read_dir(&skills_dir) {
-            Ok(entries) => {
-                for entry in entries.filter_map(Result::ok) {
-                    let path = entry.path();
-                    if path.extension().map_or(false, |ext| ext == "json") {
-                        if let Some(id) = path.file_stem().and_then(|s| s.to_str()) {
-                            let def = SkillDef::load(id)?;
-                            defs.insert(id.to_string(), def);
-                        }
-                    }
-                }
-            }
-            Err(e) => {
-                log::warn!(
-                    "failed to read skills directory {}: {}",
+        let mut defs = HashMap::new();
+        for entry in entries {
+            let entry = entry.map_err(|e| {
+                format!(
+                    "failed to read entry in skills directory {}: {}",
                     skills_dir.display(),
                     e
-                );
+                )
+            })?;
+            let path = entry.path();
+            if path.extension().map_or(false, |ext| ext == "json") {
+                let Some(id) = path.file_stem().and_then(|s| s.to_str()) else {
+                    continue;
+                };
+                let def = SkillDef::load(id)?;
+                defs.insert(id.to_string(), def);
             }
         }
 
         if defs.is_empty() {
-            log::warn!("no skills loaded from {}", skills_dir.display());
+            return Err(format!(
+                "no skill definitions loaded from {} (expected at least one *.json file)",
+                skills_dir.display()
+            ));
         }
 
         Ok(Self { defs })
+    }
+
+    pub fn len(&self) -> usize {
+        self.defs.len()
+    }
+
+    pub fn is_empty(&self) -> bool {
+        self.defs.is_empty()
+    }
+
+    pub fn contains(&self, id: &str) -> bool {
+        self.defs.contains_key(id)
+    }
+
+    /// Iterate `(id, def)` pairs in arbitrary order.
+    pub fn iter(&self) -> impl Iterator<Item = (&str, &SkillDef)> + '_ {
+        self.defs.iter().map(|(id, def)| (id.as_str(), def))
+    }
+
+    /// Iterate skill ids in arbitrary order.
+    pub fn ids(&self) -> impl Iterator<Item = &str> + '_ {
+        self.defs.keys().map(|s| s.as_str())
     }
 
     pub fn get(&self, id: &str) -> Option<&SkillDef> {

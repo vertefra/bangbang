@@ -1,3 +1,15 @@
+//! # Render utilities
+//!
+//! Shared helpers for the GPU rendering pipeline:
+//!
+//! - **Wang autotile** — [`WANG16_SHEET_LUT`] maps a 4-bit corner signature to a PixelLab-style
+//!   4×4 sheet index. [`wang_wall_sheet_index`] computes the index for a blocking cell by probing
+//!   its neighbors. Used by the GPU tilemap pass in `gpu/renderer.rs`.
+//! - **Sprite facing** — [`facing_sprite_row`] maps a [`Direction`](crate::ecs::Direction) to a
+//!   sheet row (Down=0, Up=1, Left=2, Right=3).
+//! - **Scale types** — [`RenderScale`] (world zoom) and [`UiScale`] (UI layout multiplier).
+//! - **Color helpers** — re-exported from the `color` submodule.
+
 use crate::ecs::Direction;
 use crate::map::Tilemap;
 
@@ -25,7 +37,8 @@ pub fn facing_sprite_row(d: Direction) -> u32 {
 }
 
 /// Maps corner signature `NW*8 + NE*4 + SW*2 + SE` (upper=1, lower=0) to sheet tile index
-/// (`row*4 + col`).  Derived from `farwest_interior_metadata.json` bounding-box positions.
+/// (`row*4 + col`). Derived from PixelLab tileset15 metadata; same grid layout for
+/// `farwest_interior` and `farwest_ground`.
 const WANG16_SHEET_LUT: [u32; 16] = [6, 7, 10, 9, 2, 11, 4, 15, 5, 14, 1, 8, 3, 0, 13, 12];
 
 fn tile_blocking_oob_wall(tilemap: &Tilemap, xi: i32, yi: i32) -> bool {

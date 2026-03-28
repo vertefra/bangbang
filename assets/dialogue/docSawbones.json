@@ -1,0 +1,16 @@
+{
+  "require_state": null,
+  "default_line": "Doc Sawbones: Hold it there, kid.",
+  "start": "tutorial",
+  "nodes": {
+    "tutorial": {
+      "lines": [
+        "Doc Sawbones: Hold it there, kid. You look a bit green.",
+        "You've only got 5 Life Points.",
+        "If you get into a duel and lose 'em, you'll wake up right back here.",
+        "I'll have to charge you gold for the stitches... and if you're broke, I'll be taking some of your gear as payment."
+      ],
+      "next": null
+    }
+  }
+}

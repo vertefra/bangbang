@@ -1,7 +1,12 @@
 [
-  {
-    "id": "billyHouse",
-    "position": [272, 448],
-    "scale": [1.0, 1.0]
-  }
+  { "id": "billyHouse",   "position": [240,  448], "scale": [1.0, 1.0] },
+  { "id": "clinic",       "position": [544,  496], "scale": [1.0, 1.0] },
+  { "id": "sheriff",      "position": [800,  480], "scale": [1.0, 1.0] },
+  { "id": "bank",         "position": [1104, 464], "scale": [1.0, 1.0] },
+  { "id": "saloon",       "position": [1456, 400], "scale": [1.0, 1.0] },
+  { "id": "emporium",     "position": [1824, 464], "scale": [1.0, 1.0] },
+  { "id": "waterTrough",  "position": [512,  672], "scale": [1.0, 1.0] },
+  { "id": "hitchPost",    "position": [832,  640], "scale": [1.0, 1.0] },
+  { "id": "barrels",      "position": [1760, 640], "scale": [1.0, 1.0] },
+  { "id": "cactus",       "position": [256,  960], "scale": [1.0, 1.0] }
 ]

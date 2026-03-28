@@ -58,6 +58,32 @@ pub fn dialogue_text_pos(
     (x, y)
 }
 
+/// Bottom band for transient overworld messages (blocked door, etc.). Full width; `(left, top, right, bottom)` in screen px.
+pub fn overworld_toast_band_rect(
+    screen_w: u32,
+    screen_h: u32,
+    theme: &UiTheme,
+    ui_scale: i32,
+) -> (i32, i32, i32, i32) {
+    let sc = s(ui_scale);
+    let h = screen_h as i32;
+    let pad_y = theme.dialogue_padding_y * sc;
+    let band_h = pad_y * 2 + 22 * sc;
+    let margin_bot = 8 * sc;
+    let bottom = h - margin_bot;
+    let top = bottom - band_h;
+    (0, top, screen_w as i32, bottom)
+}
+
+/// Text origin inside [`overworld_toast_band_rect`] (top-left of first line).
+pub fn overworld_toast_text_pos(band_top: i32, theme: &UiTheme, ui_scale: i32) -> (i32, i32) {
+    let sc = s(ui_scale);
+    (
+        theme.dialogue_padding_x * sc,
+        band_top + theme.dialogue_padding_y * sc,
+    )
+}
+
 /// Backpack panel rect centered on screen. Returns (left, top, right, bottom).
 pub fn backpack_panel_rect(
     screen_w: u32,
@@ -75,10 +101,26 @@ pub fn backpack_panel_rect(
     (left, top, left + pw, top + ph)
 }
 
-/// Y position for the "Usable" section title (inside backpack panel).
-pub fn backpack_usable_title_y(panel_top: i32, theme: &UiTheme, ui_scale: i32) -> i32 {
+/// Y position for the panel title "BACKPACK" at the very top of the panel content area.
+pub fn backpack_panel_title_y(panel_top: i32, theme: &UiTheme, ui_scale: i32) -> i32 {
     let sc = s(ui_scale);
     panel_top + theme.backpack_padding * sc
+}
+
+fn backpack_panel_title_h_px(sc: i32) -> i32 {
+    20 * sc
+}
+
+/// Y position for the hotkey hint line at the bottom of the panel.
+pub fn backpack_hotkey_hint_y(panel_bottom: i32, theme: &UiTheme, ui_scale: i32) -> i32 {
+    let sc = s(ui_scale);
+    panel_bottom - theme.backpack_padding * sc - 14 * sc
+}
+
+/// Y position for the "Usable" section title (inside backpack panel, below panel title).
+pub fn backpack_usable_title_y(panel_top: i32, theme: &UiTheme, ui_scale: i32) -> i32 {
+    let sc = s(ui_scale);
+    backpack_panel_title_y(panel_top, theme, ui_scale) + backpack_panel_title_h_px(sc) + 8 * sc
 }
 
 /// Y position for the first usable slot (below usable title).
@@ -153,4 +195,52 @@ pub fn backpack_content_x(panel_left: i32, theme: &UiTheme, ui_scale: i32) -> i3
 /// Horizontal indent for slot lines (after section titles).
 pub fn backpack_slot_indent(ui_scale: i32) -> i32 {
     8 * s(ui_scale)
+}
+
+/// HP bar outer rect (left, top, right, bottom) in screen px from theme margins and bar size (× ui_scale).
+pub fn hp_bar_outer_rect(theme: &UiTheme, ui_scale: i32) -> (i32, i32, i32, i32) {
+    let sc = s(ui_scale);
+    let l = theme.hp_bar_margin_x * sc;
+    let t = theme.hp_bar_margin_y * sc;
+    let r = l + theme.hp_bar_bar_width * sc;
+    let b = t + theme.hp_bar_bar_height * sc;
+    (l, t, r, b)
+}
+
+/// Inner rect for track and fill: inset from `outer` by optional border (base px × ui_scale).
+pub fn hp_bar_inner_rect(
+    theme: &UiTheme,
+    ui_scale: i32,
+    outer: (i32, i32, i32, i32),
+) -> (i32, i32, i32, i32) {
+    let (l, t, r, b) = outer;
+    let bpx = theme.hp_bar_border_px.unwrap_or(0).saturating_mul(s(ui_scale));
+    if bpx <= 0 {
+        return outer;
+    }
+    let il = l.saturating_add(bpx);
+    let it = t.saturating_add(bpx);
+    let ir = r.saturating_sub(bpx);
+    let ib = b.saturating_sub(bpx);
+    if ir <= il || ib <= it {
+        return outer;
+    }
+    (il, it, ir, ib)
+}
+
+/// Fill quad inside `inner`; `ratio` is clamped to [0, 1], width scales by ratio.
+pub fn hp_bar_fill_rect(inner: (i32, i32, i32, i32), ratio: f32) -> (i32, i32, i32, i32) {
+    let (il, it, ir, ib) = inner;
+    let w = (ir - il).max(0);
+    let rw = (w as f32 * ratio.clamp(0.0, 1.0)).round() as i32;
+    let fr = (il + rw).min(ir);
+    (il, it, fr, ib)
+}
+
+/// Label anchor (x, y) to the right of the bar; y is top padding inside outer bounds.
+pub fn hp_bar_label_pos(outer: (i32, i32, i32, i32), ui_scale: i32) -> (i32, i32) {
+    let (_, t, r, _) = outer;
+    let gap = 6 * s(ui_scale);
+    let pad = 2 * s(ui_scale);
+    (r + gap, t + pad)
 }

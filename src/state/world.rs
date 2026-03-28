@@ -1,3 +1,9 @@
+//! # World state (story / quest tracking)
+//!
+//! Persistent player choices that outlive individual maps and dialogues. Drives branch
+//! conditions in conversations and door `require_state` gates. See `docs/npc.md` (Dialogue)
+//! and `docs/maps.md` (doors.json).
+
 /// Global story / quest state. Drives dialogue conditions, quest tracking, and archetype path.
 ///
 /// ## Flags

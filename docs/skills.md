@@ -31,7 +31,7 @@ Current built-in skills:
 
 ## Loading and validation
 
-`SkillRegistry::load_from_dir()` natively discovers all ids from the `assets/skills/*.json` folder by reading file stems.
+`SkillRegistry::load_builtins()` reads `assets/skills/` and loads every `*.json` file stem as an id. Startup **fails** if the directory cannot be read or if no skill JSONs load (deployment errors surface immediately). The registry exposes `iter`, `ids`, `contains`, and `len` for listing and validation.
 
 `SkillDef::load()` validates:
 
@@ -86,12 +86,19 @@ Usable skill charges are decremented and the entry is removed when it reaches `0
 
 ## Backpack UI grouping
 
-Permanent skills are split for display and hotkey **1** by `SkillDef.subcategory`:
+`BackpackPanelLines` (in `src/ui/backpack.rs`) holds three sections, each entry carrying a `skill_id` (for icon lookup) and a display `label`:
 
-- **`weapon`** — listed under **Weapons**; one row is highlighted as equipped (`equipped_weapon_id`)
-- **anything else** — listed under **Passives** (not fired by hotkey **1**)
+- `usable: Vec<BackpackSlot>` — listed under **Usable  [2]**; label includes charge count
+- `weapons: Vec<BackpackWeaponSlot>` — listed under **Weapons  [Tab]**; equipped row shows `[equipped]`; `is_equipped` flag drives colour
+- `passives: Vec<BackpackSlot>` — listed under **Passives**
 
-Helpers: `weapon_ids_in_order`, `passive_ids_in_order`, `normalize_equipped_weapon`, `cycle_equipped_weapon_in_backpack` in `src/skills/backpack_view.rs`; `cycle_equipped_weapon(world, …)` and panel text via `ui::backpack::backpack_panel_lines`.
+Helpers: `weapon_ids_in_order`, `passive_ids_in_order`, `normalize_equipped_weapon`, `cycle_equipped_weapon_in_backpack` in `src/skills/backpack_view.rs`; `cycle_equipped_weapon(world, …)` and panel data via `ui::backpack::backpack_panel_lines`.
+
+### Skill icon images
+
+Each skill may supply a 96×96 RGBA PNG at `assets/skills/{id}.skill_image.png`. The asset store loads it via `AssetStore::get_skill_image(skill_id)` (key: `skill_image_key(id)` = `"skill_icon:{id}"`). The renderer draws it as a square icon (slot-height × slot-height) to the left of the slot label in the backpack panel. Missing images are silently skipped (text only).
+
+Current icons: `sidearm.skill_image.png`, `beer.skill_image.png`.
 
 ## ECS boundary
 

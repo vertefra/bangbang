@@ -6,38 +6,22 @@ use std::sync::Arc;
 use wgpu::util::DeviceExt;
 use winit::window::Window;
 
-use crate::assets::{dialogue_portrait_asset_key, AssetStore, LoadedSheet};
-use crate::ecs::{
-    AnimationKind, AnimationState, Direction, Facing, Player, Sprite, SpriteSheet, Transform, World,
-};
-use crate::gpu::color::{packed_rgb_to_linear, sprite_color_to_linear};
+use crate::assets::{skill_image_key, AssetStore, LoadedSheet};
+use crate::gpu::frame_context::{FrameContext, RenderScales, UiFrameState};
+use crate::gpu::pass_common::{GpuVertex, PassFrameParams, SubBatch};
+use crate::gpu::pass_debug::draw_debug_pass;
+use crate::gpu::pass_entities::{build_dialogue_portrait_batch, draw_entities_pass, EntityDrawChunk};
+use crate::gpu::pass_tilemap::draw_tilemap_pass;
+use crate::gpu::pass_ui::draw_ui_pass;
 use crate::gpu::text_atlas::{TextQuad, UiFontAtlas, UI_FONT_ATLAS_DIM};
-use crate::map::Tilemap;
-use crate::render::{
-    self, facing_sprite_row, tilemap_is_binary_collision_only, wang_wall_sheet_index, RenderScale,
-};
-use crate::ui::{layout, UiTheme};
-
-/// Developer HUD when built with `--features debug`: smoothed FPS plus lines built in `main` (world position, tile grid, palette properties).
-#[derive(Clone, Debug)]
-pub struct DebugOverlay {
-    pub fps: f32,
-    pub lines: Vec<String>,
-}
+use crate::render::color::packed_rgb_to_linear;
+use crate::ui::layout;
 
 #[repr(C)]
 #[derive(Clone, Copy, Debug, bytemuck::Pod, bytemuck::Zeroable)]
 struct ScreenUniform {
     screen_size: [f32; 2],
     _pad: [f32; 2],
-}
-
-#[repr(C)]
-#[derive(Clone, Copy, Debug, bytemuck::Pod, bytemuck::Zeroable)]
-pub struct GpuVertex {
-    pub position: [f32; 2],
-    pub uv: [f32; 2],
-    pub color: [f32; 4],
 }
 
 struct TextureBind {
@@ -61,150 +45,11 @@ pub struct GpuRenderer {
     ui_font: UiFontAtlas,
     text_quads_scratch: Vec<TextQuad>,
     tileset: Option<TextureBind>,
+    /// FNV-1a tag of the last uploaded map tileset pixels; map transitions must re-upload when this changes.
+    tileset_sheet_tag: Option<u64>,
     characters: HashMap<String, TextureBind>,
     screen_w: u32,
     screen_h: u32,
-}
-
-#[derive(Default)]
-struct SubBatch {
-    verts: Vec<GpuVertex>,
-    indices: Vec<u32>,
-}
-
-impl SubBatch {
-    fn push_quad(
-        &mut self,
-        x0: f32,
-        y0: f32,
-        x1: f32,
-        y1: f32,
-        u0: f32,
-        v0: f32,
-        u1: f32,
-        v1: f32,
-        color: [f32; 4],
-    ) {
-        let base = self.verts.len() as u32;
-        self.verts.extend_from_slice(&[
-            GpuVertex {
-                position: [x0, y0],
-                uv: [u0, v0],
-                color,
-            },
-            GpuVertex {
-                position: [x1, y0],
-                uv: [u1, v0],
-                color,
-            },
-            GpuVertex {
-                position: [x1, y1],
-                uv: [u1, v1],
-                color,
-            },
-            GpuVertex {
-                position: [x0, y1],
-                uv: [u0, v1],
-                color,
-            },
-        ]);
-        self.indices
-            .extend_from_slice(&[base, base + 1, base + 2, base, base + 2, base + 3]);
-    }
-
-    fn is_empty(&self) -> bool {
-        self.indices.is_empty()
-    }
-}
-
-fn upload_rgba(
-    device: &wgpu::Device,
-    queue: &wgpu::Queue,
-    label: &str,
-    width: u32,
-    height: u32,
-    rgba: &[u8],
-) -> wgpu::TextureView {
-    let texture = device.create_texture(&wgpu::TextureDescriptor {
-        label: Some(label),
-        size: wgpu::Extent3d {
-            width,
-            height,
-            depth_or_array_layers: 1,
-        },
-        mip_level_count: 1,
-        sample_count: 1,
-        dimension: wgpu::TextureDimension::D2,
-        format: wgpu::TextureFormat::Rgba8UnormSrgb,
-        usage: wgpu::TextureUsages::TEXTURE_BINDING | wgpu::TextureUsages::COPY_DST,
-        view_formats: &[],
-    });
-    queue.write_texture(
-        wgpu::ImageCopyTexture {
-            texture: &texture,
-            mip_level: 0,
-            origin: wgpu::Origin3d::ZERO,
-            aspect: wgpu::TextureAspect::All,
-        },
-        rgba,
-        wgpu::ImageDataLayout {
-            offset: 0,
-            bytes_per_row: Some(4 * width),
-            rows_per_image: Some(height),
-        },
-        wgpu::Extent3d {
-            width,
-            height,
-            depth_or_array_layers: 1,
-        },
-    );
-    texture.create_view(&wgpu::TextureViewDescriptor::default())
-}
-
-fn sheet_to_rgba(sheet: &LoadedSheet) -> Vec<u8> {
-    let n = (sheet.width * sheet.height * 4) as usize;
-    let mut v = vec![0u8; n];
-    for i in 0..sheet.pixels.len() {
-        let p = sheet.pixels[i];
-        let r = ((p >> 16) & 0xff) as u8;
-        let g = ((p >> 8) & 0xff) as u8;
-        let b = (p & 0xff) as u8;
-        let a = if p == 0 { 0 } else { 255 };
-        let o = i * 4;
-        v[o] = r;
-        v[o + 1] = g;
-        v[o + 2] = b;
-        v[o + 3] = a;
-    }
-    v
-}
-
-fn make_bind(
-    device: &wgpu::Device,
-    layout: &wgpu::BindGroupLayout,
-    sampler: &wgpu::Sampler,
-    view: &wgpu::TextureView,
-    label: &str,
-) -> TextureBind {
-    let bind_group = device.create_bind_group(&wgpu::BindGroupDescriptor {
-        label: Some(label),
-        layout,
-        entries: &[
-            wgpu::BindGroupEntry {
-                binding: 0,
-                resource: wgpu::BindingResource::TextureView(view),
-            },
-            wgpu::BindGroupEntry {
-                binding: 1,
-                resource: wgpu::BindingResource::Sampler(sampler),
-            },
-        ],
-    });
-    TextureBind { bind_group }
-}
-
-fn theme_rgb(color: [f32; 3]) -> [f32; 4] {
-    packed_rgb_to_linear(render::to_u32(color[0], color[1], color[2]))
 }
 
 impl GpuRenderer {
@@ -433,6 +278,7 @@ impl GpuRenderer {
             ui_font,
             text_quads_scratch: Vec::new(),
             tileset: None,
+            tileset_sheet_tag: None,
             characters: HashMap::new(),
             screen_w,
             screen_h,
@@ -460,7 +306,7 @@ impl GpuRenderer {
             .write_buffer(&self.uniform_buffer, 0, bytemuck::bytes_of(&u));
     }
 
-    fn push_ui_text(
+    pub(crate) fn push_ui_text(
         &mut self,
         font: &mut SubBatch,
         text: &str,
@@ -486,7 +332,7 @@ impl GpuRenderer {
     }
 
     /// Debug HUD: **Noto Sans Bold** via `layout_debug_text_quads` (separate from regular UI).
-    fn push_ui_debug_text(
+    pub(crate) fn push_ui_debug_text(
         &mut self,
         font: &mut SubBatch,
         text: &str,
@@ -511,10 +357,34 @@ impl GpuRenderer {
         }
     }
 
-    fn ensure_tileset(&mut self, sheet: &LoadedSheet) {
-        if self.tileset.is_some() {
+    fn loaded_sheet_tag(sheet: &LoadedSheet) -> u64 {
+        const OFFSET: u64 = 14695981039346656037;
+        const PRIME: u64 = 1099511628211;
+        let mut h = OFFSET;
+        for &x in &[
+            sheet.width,
+            sheet.height,
+            sheet.frame_width,
+            sheet.frame_height,
+            sheet.cols,
+            sheet.rows,
+        ] {
+            h ^= x as u64;
+            h = h.wrapping_mul(PRIME);
+        }
+        for &p in &sheet.pixels {
+            h ^= p as u64;
+            h = h.wrapping_mul(PRIME);
+        }
+        h
+    }
+
+    pub(crate) fn ensure_tileset(&mut self, sheet: &LoadedSheet) {
+        let tag = Self::loaded_sheet_tag(sheet);
+        if self.tileset_sheet_tag == Some(tag) {
             return;
         }
+        self.tileset_sheet_tag = Some(tag);
         let rgba = sheet_to_rgba(sheet);
         let view = upload_rgba(
             &self.device,
@@ -534,7 +404,7 @@ impl GpuRenderer {
         self.tileset = Some(bind);
     }
 
-    fn ensure_character(&mut self, id: &str, sheet: &LoadedSheet) {
+    pub(crate) fn ensure_character(&mut self, id: &str, sheet: &LoadedSheet) {
         if self.characters.contains_key(id) {
             return;
         }
@@ -557,494 +427,77 @@ impl GpuRenderer {
         self.characters.insert(id.to_string(), bind);
     }
 
-    /// Full frame: world + UI.
-    #[allow(clippy::too_many_arguments)]
-    fn draw_tilemap_pass(
+    /// Upload skill icon texture (if not yet cached) and queue a quad in `skill_icons`.
+    pub(crate) fn push_skill_icon(
         &mut self,
-        tilemap: &Tilemap,
-        tileset: Option<&LoadedSheet>,
-        cam_x: f32,
-        cam_y: f32,
-        half_w: f32,
-        half_h: f32,
-        rs: f32,
-        white_under: &mut SubBatch,
-        tiles: &mut SubBatch,
-    ) {
-        let world_to_screen_x = |wx: f32| -> f32 { (wx - cam_x) * rs + half_w };
-        let world_to_screen_y = |wy: f32| -> f32 { (wy - cam_y) * rs + half_h };
-        let ts = tilemap.tile_size;
-
-        if let Some(sheet) = tileset {
-            self.ensure_tileset(sheet);
-            let tw = sheet.width as f32;
-            let th = sheet.height as f32;
-
-            for y in 0..tilemap.height {
-                for x in 0..tilemap.width {
-                    let wx = x as f32 * ts;
-                    let wy = y as f32 * ts;
-                    let sx0 = world_to_screen_x(wx);
-                    let sy0 = world_to_screen_y(wy);
-                    let sx1 = world_to_screen_x(wx + ts);
-                    let sy1 = world_to_screen_y(wy + ts);
-                    if let Some(td) = &tilemap.tileset_draw {
-                        let logical = tilemap.tile_at(x, y).unwrap_or(0);
-                        let tile_id = if logical == 0 {
-                            td.floor
-                        } else if td.wang_autotile {
-                            wang_wall_sheet_index(tilemap, x, y)
-                        } else {
-                            td.wall
-                        };
-                        let max_id = sheet.cols * sheet.rows;
-                        let tid = tile_id.min(max_id.saturating_sub(1));
-                        let col = tid % sheet.cols;
-                        let row = tid / sheet.cols;
-                        let src_x = col * sheet.frame_width;
-                        let src_y = row * sheet.frame_height;
-                        let u0 = src_x as f32 / tw;
-                        let u1 = (src_x + sheet.frame_width) as f32 / tw;
-                        let v0 = src_y as f32 / th;
-                        let v1 = (src_y + sheet.frame_height) as f32 / th;
-                        tiles.push_quad(sx0, sy0, sx1, sy1, u0, v0, u1, v1, [1.0, 1.0, 1.0, 1.0]);
-                    } else if tilemap_is_binary_collision_only(tilemap) {
-                        let logical = tilemap.tile_at(x, y).unwrap_or(0);
-                        let rgb = tilemap.fill_rgb_for_tile(logical);
-                        let c = packed_rgb_to_linear(crate::render::to_u32(rgb[0], rgb[1], rgb[2]));
-                        white_under.push_quad(sx0, sy0, sx1, sy1, 0.0, 0.0, 1.0, 1.0, c);
-                    } else {
-                        let logical = tilemap.tile_at(x, y).unwrap_or(0);
-                        let max_id = sheet.cols * sheet.rows;
-                        let tid = logical.min(max_id.saturating_sub(1));
-                        let col = tid % sheet.cols;
-                        let row = tid / sheet.cols;
-                        let src_x = col * sheet.frame_width;
-                        let src_y = row * sheet.frame_height;
-                        let u0 = src_x as f32 / tw;
-                        let u1 = (src_x + sheet.frame_width) as f32 / tw;
-                        let v0 = src_y as f32 / th;
-                        let v1 = (src_y + sheet.frame_height) as f32 / th;
-                        tiles.push_quad(sx0, sy0, sx1, sy1, u0, v0, u1, v1, [1.0, 1.0, 1.0, 1.0]);
-                    }
-                }
-            }
-        } else {
-            for y in 0..tilemap.height {
-                for x in 0..tilemap.width {
-                    let wx = x as f32 * ts;
-                    let wy = y as f32 * ts;
-                    let sx0 = world_to_screen_x(wx);
-                    let sy0 = world_to_screen_y(wy);
-                    let sx1 = world_to_screen_x(wx + ts);
-                    let sy1 = world_to_screen_y(wy + ts);
-                    let logical = tilemap.tile_at(x, y).unwrap_or(0);
-                    let rgb = tilemap.fill_rgb_for_tile(logical);
-                    let c = packed_rgb_to_linear(crate::render::to_u32(rgb[0], rgb[1], rgb[2]));
-                    white_under.push_quad(sx0, sy0, sx1, sy1, 0.0, 0.0, 1.0, 1.0, c);
-                }
-            }
-        }
-    }
-
-    #[allow(clippy::too_many_arguments)]
-    fn draw_entities_pass(
-        &mut self,
-        world: &World,
         asset_store: &mut AssetStore,
-        cam_x: f32,
-        cam_y: f32,
-        half_w: f32,
-        half_h: f32,
-        rs: f32,
-        chars: &mut BTreeMap<String, SubBatch>,
-        white_over: &mut SubBatch,
+        skill_id: &str,
+        x: f32,
+        y: f32,
+        size: f32,
+        skill_icons: &mut BTreeMap<String, SubBatch>,
     ) {
-        let world_to_screen_x = |wx: f32| -> f32 { (wx - cam_x) * rs + half_w };
-        let world_to_screen_y = |wy: f32| -> f32 { (wy - cam_y) * rs + half_h };
-
-        for (_, (transform, sprite, sprite_sheet, facing, anim_state)) in world
-            .query::<(
-                &Transform,
-                &Sprite,
-                Option<&SpriteSheet>,
-                Option<&Facing>,
-                Option<&AnimationState>,
-            )>()
-            .iter()
-        {
-            let row = facing.map(|f| facing_sprite_row(f.0)).unwrap_or(0);
-            let (anim_kind, frame_index, walk_bob) = anim_state
-                .map(|a| {
-                    (
-                        a.kind,
-                        a.frame_index,
-                        matches!(a.kind, AnimationKind::Walk) && (a.frame_index % 2 == 1),
-                    )
-                })
-                .unwrap_or((AnimationKind::Idle, 0, false));
-
-            let (size_w, size_h, char_draw) = if let Some(ss) = sprite_sheet {
-                if let Some(sheet) = asset_store.get_sheet(&ss.character_id) {
-                    self.ensure_character(&ss.character_id, sheet);
-                    let cols = sheet.cols;
-                    let c = match anim_kind {
-                        AnimationKind::Idle => 0,
-                        AnimationKind::Walk => {
-                            let walk_cols = (cols - 1).max(1);
-                            (1 + (frame_index % walk_cols)).min(cols.saturating_sub(1))
-                        }
-                    };
-                    (
-                        sheet.frame_width as f32 * transform.scale.x,
-                        sheet.frame_height as f32 * transform.scale.y,
-                        Some((
-                            ss.character_id.clone(),
-                            sheet,
-                            row.min(sheet.rows.saturating_sub(1)),
-                            c,
-                        )),
-                    )
-                } else {
-                    (16.0 * transform.scale.x, 16.0 * transform.scale.y, None)
-                }
-            } else {
-                (16.0 * transform.scale.x, 16.0 * transform.scale.y, None)
-            };
-
-            let bob_off = if walk_bob { -1.0 } else { 0.0 };
-            let wx = transform.position.x - size_w * 0.5;
-            let wy = transform.position.y - size_h * 0.5 + bob_off;
-            let sx0 = world_to_screen_x(wx);
-            let sy0 = world_to_screen_y(wy);
-            let sx1 = world_to_screen_x(wx + size_w);
-            let sy1 = world_to_screen_y(wy + size_h);
-
-            if let Some((cid, sheet, r, col)) = char_draw {
-                let src_x = col * sheet.frame_width;
-                let src_y = r * sheet.frame_height;
-                let tw = sheet.width as f32;
-                let th = sheet.height as f32;
-                let u0 = src_x as f32 / tw;
-                let u1 = (src_x + sheet.frame_width) as f32 / tw;
-                let v0 = src_y as f32 / th;
-                let v1 = (src_y + sheet.frame_height) as f32 / th;
-                chars.entry(cid).or_default().push_quad(
-                    sx0,
-                    sy0,
-                    sx1,
-                    sy1,
-                    u0,
-                    v0,
-                    u1,
-                    v1,
-                    [1.0, 1.0, 1.0, 1.0],
+        let key = skill_image_key(skill_id);
+        if !self.characters.contains_key(&key) {
+            if let Some(sheet) = asset_store.get_skill_image(skill_id) {
+                let rgba = sheet_to_rgba(sheet);
+                let view = upload_rgba(
+                    &self.device,
+                    &self.queue,
+                    &key,
+                    sheet.width,
+                    sheet.height,
+                    &rgba,
                 );
-            } else {
-                let c = sprite_color_to_linear(sprite.color);
-                white_over.push_quad(sx0, sy0, sx1, sy1, 0.0, 0.0, 1.0, 1.0, c);
+                let bind = make_bind(
+                    &self.device,
+                    &self.bind_group_layout_tex,
+                    &self.sampler,
+                    &view,
+                    &key,
+                );
+                self.characters.insert(key.clone(), bind);
             }
         }
-    }
-
-    /// Screen-space portrait quad for the dialogue box, if `portrait.png` or a character sheet exists.
-    fn build_dialogue_portrait_batch(
-        &mut self,
-        asset_store: &mut AssetStore,
-        theme: &UiTheme,
-        npc_id: &str,
-        w: u32,
-        h: u32,
-        ui_scale: i32,
-    ) -> Option<(String, SubBatch)> {
-        let (pl, pt, pr, pb) = layout::dialogue_portrait_rect(w, h, theme, ui_scale);
-        let quad = |u0: f32, v0: f32, u1: f32, v1: f32| {
-            let mut batch = SubBatch::default();
-            let c = [1.0_f32, 1.0, 1.0, 1.0];
-            batch.push_quad(
-                pl as f32, pt as f32, pr as f32, pb as f32, u0, v0, u1, v1, c,
-            );
-            batch
-        };
-
-        if let Some(sheet) = asset_store.get_dialogue_portrait_sheet(npc_id) {
-            let key = dialogue_portrait_asset_key(npc_id);
-            self.ensure_character(&key, sheet);
-            let tw = sheet.width as f32;
-            let th = sheet.height as f32;
-            let fw = sheet.frame_width as f32;
-            let fh = sheet.frame_height as f32;
-            let u1 = fw / tw;
-            let v1 = fh / th;
-            return Some((key, quad(0.0, 0.0, u1, v1)));
-        }
-
-        let sheet = asset_store.get_sheet(npc_id)?;
-        self.ensure_character(npc_id, sheet);
-        let row = render::facing_sprite_row(Direction::Down).min(sheet.rows.saturating_sub(1));
-        let col = 0_u32;
-        let src_x = col * sheet.frame_width;
-        let src_y = row * sheet.frame_height;
-        let tw = sheet.width as f32;
-        let th = sheet.height as f32;
-        let u0 = src_x as f32 / tw;
-        let u1 = (src_x + sheet.frame_width) as f32 / tw;
-        let v0 = src_y as f32 / th;
-        let v1 = (src_y + sheet.frame_height) as f32 / th;
-        Some((npc_id.to_string(), quad(u0, v0, u1, v1)))
-    }
-
-    #[allow(clippy::too_many_arguments)]
-    fn draw_ui_pass(
-        &mut self,
-        theme: &UiTheme,
-        dialogue_message: Option<&str>,
-        dialogue_text_extra_left: i32,
-        backpack_open: bool,
-        panel_lines: Option<&crate::ui::BackpackPanelLines>,
-        w: u32,
-        h: u32,
-        ui_scale: u32,
-        font_scale: f32,
-        white_over: &mut SubBatch,
-        font: &mut SubBatch,
-    ) {
-        let ui_s = ui_scale.max(1) as f32;
-        let text_s = ui_s * font_scale;
-        let us = ui_scale.max(1) as i32;
-
-        if let Some(msg) = dialogue_message {
-            let (left, top, right, bottom) = layout::dialogue_box_rect(w, h, theme, us);
-            let fill = theme_rgb(theme.dialogue_panel_fill);
-            let border = theme_rgb(theme.dialogue_panel_border);
-            let text_c = theme_rgb(theme.dialogue_text);
-            white_over.push_quad(
-                left as f32,
-                top as f32,
-                right as f32,
-                bottom as f32,
+        if self.characters.contains_key(&key) {
+            skill_icons.entry(key).or_default().push_quad(
+                x,
+                y,
+                x + size,
+                y + size,
                 0.0,
                 0.0,
                 1.0,
                 1.0,
-                fill,
+                [1.0, 1.0, 1.0, 1.0],
             );
-            let border_px = theme.dialogue_border_top_px * us;
-            if border_px > 0 {
-                white_over.push_quad(
-                    left as f32,
-                    top as f32,
-                    right as f32,
-                    (top + border_px) as f32,
-                    0.0,
-                    0.0,
-                    1.0,
-                    1.0,
-                    border,
-                );
-            }
-            let (tx, ty) =
-                layout::dialogue_text_pos(w, h, top, theme, us, dialogue_text_extra_left);
-            let inner_w =
-                ((right - tx).saturating_sub(theme.dialogue_padding_x * us)).max(1) as f32;
-            self.push_ui_text(
-                font,
-                msg,
-                tx as f32,
-                ty as f32,
-                text_c,
-                text_s,
-                Some(inner_w),
-            );
-        }
-
-        if backpack_open {
-            if let Some(panel) = panel_lines {
-                let us = ui_scale.max(1) as i32;
-                let (left, top, right, bottom) = layout::backpack_panel_rect(w, h, theme, us);
-                let fill = theme_rgb(theme.backpack_panel_fill);
-                let border = theme_rgb(theme.backpack_panel_border);
-                let empty_c = theme_rgb(theme.backpack_slot_empty);
-                let section_usable_c = theme_rgb(theme.backpack_section_usable);
-                let section_weapon_c = theme_rgb(theme.backpack_section_weapon);
-                let section_passive_c = theme_rgb(theme.backpack_section_passive);
-                let row_weapon_c = theme_rgb(theme.backpack_row_weapon);
-                let row_passive_c = theme_rgb(theme.backpack_row_passive);
-                let row_equipped_c = theme_rgb(theme.backpack_row_equipped);
-                white_over.push_quad(
-                    left as f32,
-                    top as f32,
-                    right as f32,
-                    bottom as f32,
-                    0.0,
-                    0.0,
-                    1.0,
-                    1.0,
-                    fill,
-                );
-                let bt = theme.backpack_border_top_px * us;
-                if bt > 0 {
-                    white_over.push_quad(
-                        left as f32,
-                        top as f32,
-                        right as f32,
-                        (top + bt) as f32,
-                        0.0,
-                        0.0,
-                        1.0,
-                        1.0,
-                        border,
-                    );
-                }
-                let cx = layout::backpack_content_x(left, theme, us) as f32;
-                let indent = layout::backpack_slot_indent(us) as f32;
-                let panel_inner_w =
-                    ((right - left).saturating_sub(theme.backpack_padding * us * 2)).max(1) as f32;
-                let slot_max_w = (panel_inner_w - indent).max(8.0);
-                let u_ty = layout::backpack_usable_title_y(top, theme, us) as f32;
-                self.push_ui_text(
-                    font,
-                    "Usable",
-                    cx,
-                    u_ty,
-                    section_usable_c,
-                    text_s,
-                    Some(panel_inner_w),
-                );
-                let max_usable = layout::BACKPACK_MAX_USABLE_SLOTS;
-                let usable_count = panel.usable.len().min(max_usable);
-                for i in 0..max_usable {
-                    let slot_y = layout::backpack_usable_slot_y(top, theme, i, us) as f32;
-                    let label = panel.usable.get(i).map(|s| s.as_str()).unwrap_or("—");
-                    let c = if i < usable_count {
-                        section_usable_c
-                    } else {
-                        empty_c
-                    };
-                    self.push_ui_text(
-                        font,
-                        label,
-                        cx + indent,
-                        slot_y,
-                        c,
-                        text_s,
-                        Some(slot_max_w),
-                    );
-                }
-                let w_ty = layout::backpack_weapon_title_y(top, theme, us) as f32;
-                self.push_ui_text(
-                    font,
-                    "Weapons",
-                    cx,
-                    w_ty,
-                    section_weapon_c,
-                    text_s,
-                    Some(panel_inner_w),
-                );
-                let max_weapon = layout::BACKPACK_MAX_WEAPON_SLOTS;
-                let weapon_count = panel.weapons.len().min(max_weapon);
-                for i in 0..max_weapon {
-                    let slot_y = layout::backpack_weapon_slot_y(top, theme, i, us) as f32;
-                    let (label, equipped) = panel
-                        .weapons
-                        .get(i)
-                        .map(|(s, b)| (s.as_str(), *b))
-                        .unwrap_or(("—", false));
-                    let c = if i < weapon_count {
-                        if equipped {
-                            row_equipped_c
-                        } else {
-                            row_weapon_c
-                        }
-                    } else {
-                        empty_c
-                    };
-                    self.push_ui_text(
-                        font,
-                        label,
-                        cx + indent,
-                        slot_y,
-                        c,
-                        text_s,
-                        Some(slot_max_w),
-                    );
-                }
-                let p_ty = layout::backpack_passive_title_y(top, theme, us) as f32;
-                self.push_ui_text(
-                    font,
-                    "Passives",
-                    cx,
-                    p_ty,
-                    section_passive_c,
-                    text_s,
-                    Some(panel_inner_w),
-                );
-                let max_passive = layout::BACKPACK_MAX_PASSIVE_SLOTS;
-                let passive_count = panel.passives.len().min(max_passive);
-                for i in 0..max_passive {
-                    let slot_y = layout::backpack_passive_slot_y(top, theme, i, us) as f32;
-                    let label = panel.passives.get(i).map(|s| s.as_str()).unwrap_or("—");
-                    let c = if i < passive_count {
-                        row_passive_c
-                    } else {
-                        empty_c
-                    };
-                    self.push_ui_text(
-                        font,
-                        label,
-                        cx + indent,
-                        slot_y,
-                        c,
-                        text_s,
-                        Some(slot_max_w),
-                    );
-                }
-            }
         }
     }
 
-    fn draw_debug_pass(
-        &mut self,
-        overlay: Option<DebugOverlay>,
-        ui_scale: u32,
-        font_scale: f32,
-        font: &mut SubBatch,
-    ) {
-        let Some(o) = overlay else {
-            return;
-        };
-        // Linear black, alpha 1 — avoid `packed_rgb_to_linear(0)` which forces alpha 0.
-        let fg = [0.0, 0.0, 0.0, 1.0];
-        let ui_s = ui_scale.max(1) as f32;
-        let text_s = ui_s * font_scale;
-        let margin = 6.0 * text_s;
-        let line_step = 12.0 * text_s;
-        let mut y = margin;
-        let fps_label = format!("FPS:{:.0}", o.fps);
-        self.push_ui_debug_text(font, &fps_label, margin, y, fg, text_s, None);
-        y += line_step;
-        for line in &o.lines {
-            self.push_ui_debug_text(font, line, margin, y, fg, text_s, None);
-            y += line_step;
-        }
-    }
+    pub fn draw_frame(&mut self, frame: FrameContext<'_>) -> Result<(), String> {
+        let FrameContext {
+            tilemap,
+            tileset,
+            world,
+            asset_store,
+            theme,
+            scales,
+            ui,
+            debug: debug_overlay,
+        } = frame;
+        let RenderScales {
+            render: render_scale,
+            ui: ui_scale,
+            font: font_scale,
+        } = scales;
+        let UiFrameState {
+            dialogue_message,
+            dialogue_npc_id,
+            overworld_toast,
+            backpack_open,
+            backpack_lines: panel_lines,
+        } = ui;
 
-    pub fn draw_frame(
-        &mut self,
-        tilemap: &Tilemap,
-        tileset: Option<&LoadedSheet>,
-        world: &World,
-        dialogue_message: Option<&str>,
-        dialogue_npc_id: Option<&str>,
-        backpack_open: bool,
-        asset_store: &mut AssetStore,
-        theme: &UiTheme,
-        debug_overlay: Option<DebugOverlay>,
-        render_scale: RenderScale,
-        ui_scale: u32,
-        font_scale: f32,
-        panel_lines: Option<&crate::ui::BackpackPanelLines>,
-    ) -> Result<(), String> {
         if let Some(s) = tileset {
             self.ensure_tileset(s);
         }
@@ -1053,35 +506,47 @@ impl GpuRenderer {
         let sh = self.screen_h as f32;
         let rs = render_scale.0.max(0.001);
 
-        let cam_x = world
-            .query::<(&Player, &Transform)>()
+        let (cam_x, cam_y, player_hp) = world
+            .query::<(&crate::ecs::Player, &crate::ecs::Transform, &crate::ecs::Health)>()
             .iter()
             .next()
-            .map(|(_, (_, t))| t.position.x)
-            .unwrap_or(0.0);
-        let cam_y = world
-            .query::<(&Player, &Transform)>()
-            .iter()
-            .next()
-            .map(|(_, (_, t))| t.position.y)
-            .unwrap_or(0.0);
+            .map(|(_, (_, t, h))| {
+                let hp = if h.max > 0 {
+                    Some((h.current.clamp(0, h.max), h.max))
+                } else {
+                    None
+                };
+                (t.position.x, t.position.y, hp)
+            })
+            .unwrap_or((0.0, 0.0, None));
         let half_w = sw * 0.5;
         let half_h = sh * 0.5;
+
+        let pass_params = PassFrameParams {
+            cam_x,
+            cam_y,
+            half_w,
+            half_h,
+            rs,
+        };
 
         let bg = packed_rgb_to_linear(crate::render::to_u32(0.15, 0.12, 0.18));
 
         // Solid clear + solid-color tiles (below textured layer).
         let mut white_under = SubBatch::default();
         let mut tiles = SubBatch::default();
-        let mut chars: BTreeMap<String, SubBatch> = BTreeMap::new();
-        // Colored rects without sheet + UI panels (above world layers).
+        // Colored rects: UI panels (above world layers). World entity fallbacks are drawn in
+        // `entity_chunks` (Y-sorted with textured sprites).
         let mut white_over = SubBatch::default();
+        // Skill icon quads drawn after panel backgrounds, before font text.
+        let mut skill_icons: BTreeMap<String, SubBatch> = BTreeMap::new();
         let mut font = SubBatch::default();
 
         let us_i = ui_scale.max(1) as i32;
         let dialogue_portrait = if dialogue_message.is_some() {
             dialogue_npc_id.and_then(|npc| {
-                self.build_dialogue_portrait_batch(
+                build_dialogue_portrait_batch(
+                    self,
                     asset_store,
                     theme,
                     npc,
@@ -1101,45 +566,37 @@ impl GpuRenderer {
 
         white_under.push_quad(0.0, 0.0, sw, sh, 0.0, 0.0, 1.0, 1.0, bg);
 
-        self.draw_tilemap_pass(
+        draw_tilemap_pass(
+            self,
             tilemap,
             tileset,
-            cam_x,
-            cam_y,
-            half_w,
-            half_h,
-            rs,
+            pass_params,
             &mut white_under,
             &mut tiles,
         );
 
-        self.draw_entities_pass(
-            world,
-            asset_store,
-            cam_x,
-            cam_y,
-            half_w,
-            half_h,
-            rs,
-            &mut chars,
-            &mut white_over,
-        );
+        let entity_chunks = draw_entities_pass(self, world, asset_store, pass_params);
 
-        self.draw_ui_pass(
+        draw_ui_pass(
+            self,
             theme,
+            player_hp,
             dialogue_message,
             dialogue_text_extra_left,
+            overworld_toast,
             backpack_open,
             panel_lines,
+            asset_store,
             self.screen_w,
             self.screen_h,
             ui_scale,
             font_scale,
             &mut white_over,
             &mut font,
+            &mut skill_icons,
         );
 
-        self.draw_debug_pass(debug_overlay, ui_scale, font_scale, &mut font);
+        draw_debug_pass(self, debug_overlay, ui_scale, font_scale, &mut font);
 
         // --- Upload & draw ---
         let surface_texture = self
@@ -1179,7 +636,6 @@ impl GpuRenderer {
             pass.set_pipeline(&self.pipeline);
             pass.set_bind_group(0, &self.uniform_bind_group, &[]);
 
-            // Concatenate batches into one buffer with offsets — or separate buffers per batch
             fn upload_batch(
                 device: &wgpu::Device,
                 label: &str,
@@ -1217,18 +673,33 @@ impl GpuRenderer {
                 pass.draw_indexed(0..n, 0, 0..1);
             }
 
-            for (id, batch) in chars.iter() {
-                if batch.is_empty() {
-                    continue;
-                }
-                let Some(bg) = self.characters.get(id) else {
-                    continue;
-                };
-                if let Some((vb, ib, n)) = upload_batch(&self.device, "char", batch) {
-                    pass.set_bind_group(1, &bg.bind_group, &[]);
-                    pass.set_vertex_buffer(0, vb.slice(..));
-                    pass.set_index_buffer(ib.slice(..), wgpu::IndexFormat::Uint32);
-                    pass.draw_indexed(0..n, 0, 0..1);
+            for chunk in &entity_chunks {
+                match chunk {
+                    EntityDrawChunk::Textured {
+                        character_id,
+                        batch,
+                    } => {
+                        if batch.is_empty() {
+                            continue;
+                        }
+                        let Some(bg) = self.characters.get(character_id) else {
+                            continue;
+                        };
+                        if let Some((vb, ib, n)) = upload_batch(&self.device, "char", batch) {
+                            pass.set_bind_group(1, &bg.bind_group, &[]);
+                            pass.set_vertex_buffer(0, vb.slice(..));
+                            pass.set_index_buffer(ib.slice(..), wgpu::IndexFormat::Uint32);
+                            pass.draw_indexed(0..n, 0, 0..1);
+                        }
+                    }
+                    EntityDrawChunk::Solid { batch } => {
+                        if let Some((vb, ib, n)) = upload_batch(&self.device, "entity_solid", batch) {
+                            pass.set_bind_group(1, &self.white.bind_group, &[]);
+                            pass.set_vertex_buffer(0, vb.slice(..));
+                            pass.set_index_buffer(ib.slice(..), wgpu::IndexFormat::Uint32);
+                            pass.draw_indexed(0..n, 0, 0..1);
+                        }
+                    }
                 }
             }
 
@@ -1237,6 +708,22 @@ impl GpuRenderer {
                 pass.set_vertex_buffer(0, vb.slice(..));
                 pass.set_index_buffer(ib.slice(..), wgpu::IndexFormat::Uint32);
                 pass.draw_indexed(0..n, 0, 0..1);
+            }
+
+            // Skill icons drawn after panel backgrounds (white_over) but before text.
+            for (id, batch) in skill_icons.iter() {
+                if batch.is_empty() {
+                    continue;
+                }
+                let Some(bg) = self.characters.get(id) else {
+                    continue;
+                };
+                if let Some((vb, ib, n)) = upload_batch(&self.device, "skill_icon", batch) {
+                    pass.set_bind_group(1, &bg.bind_group, &[]);
+                    pass.set_vertex_buffer(0, vb.slice(..));
+                    pass.set_index_buffer(ib.slice(..), wgpu::IndexFormat::Uint32);
+                    pass.draw_indexed(0..n, 0, 0..1);
+                }
             }
 
             if let Some((portrait_id, batch)) = dialogue_portrait.as_ref() {
@@ -1267,4 +754,90 @@ impl GpuRenderer {
 
         Ok(())
     }
+}
+
+fn upload_rgba(
+    device: &wgpu::Device,
+    queue: &wgpu::Queue,
+    label: &str,
+    width: u32,
+    height: u32,
+    rgba: &[u8],
+) -> wgpu::TextureView {
+    let texture = device.create_texture(&wgpu::TextureDescriptor {
+        label: Some(label),
+        size: wgpu::Extent3d {
+            width,
+            height,
+            depth_or_array_layers: 1,
+        },
+        mip_level_count: 1,
+        sample_count: 1,
+        dimension: wgpu::TextureDimension::D2,
+        format: wgpu::TextureFormat::Rgba8UnormSrgb,
+        usage: wgpu::TextureUsages::TEXTURE_BINDING | wgpu::TextureUsages::COPY_DST,
+        view_formats: &[],
+    });
+    queue.write_texture(
+        wgpu::ImageCopyTexture {
+            texture: &texture,
+            mip_level: 0,
+            origin: wgpu::Origin3d::ZERO,
+            aspect: wgpu::TextureAspect::All,
+        },
+        rgba,
+        wgpu::ImageDataLayout {
+            offset: 0,
+            bytes_per_row: Some(4 * width),
+            rows_per_image: Some(height),
+        },
+        wgpu::Extent3d {
+            width,
+            height,
+            depth_or_array_layers: 1,
+        },
+    );
+    texture.create_view(&wgpu::TextureViewDescriptor::default())
+}
+
+fn sheet_to_rgba(sheet: &LoadedSheet) -> Vec<u8> {
+    let n = (sheet.width * sheet.height * 4) as usize;
+    let mut v = vec![0u8; n];
+    for i in 0..sheet.pixels.len() {
+        let p = sheet.pixels[i];
+        let r = ((p >> 16) & 0xff) as u8;
+        let g = ((p >> 8) & 0xff) as u8;
+        let b = (p & 0xff) as u8;
+        let a = if p == 0 { 0 } else { 255 };
+        let o = i * 4;
+        v[o] = r;
+        v[o + 1] = g;
+        v[o + 2] = b;
+        v[o + 3] = a;
+    }
+    v
+}
+
+fn make_bind(
+    device: &wgpu::Device,
+    layout: &wgpu::BindGroupLayout,
+    sampler: &wgpu::Sampler,
+    view: &wgpu::TextureView,
+    label: &str,
+) -> TextureBind {
+    let bind_group = device.create_bind_group(&wgpu::BindGroupDescriptor {
+        label: Some(label),
+        layout,
+        entries: &[
+            wgpu::BindGroupEntry {
+                binding: 0,
+                resource: wgpu::BindingResource::TextureView(view),
+            },
+            wgpu::BindGroupEntry {
+                binding: 1,
+                resource: wgpu::BindingResource::Sampler(sampler),
+            },
+        ],
+    });
+    TextureBind { bind_group }
 }

@@ -32,6 +32,7 @@
         "I need to hit the Emporium."
       ],
       "effects": [
+        "set_flag:mom_intro_done",
         "start_quest:withdraw_gold"
       ],
       "next": null

@@ -26,12 +26,24 @@ pub struct UiTheme {
     pub backpack_padding: i32,
     pub backpack_slot_height: i32,
     pub backpack_border_top_px: i32,
+    pub backpack_panel_title: [f32; 3],
     pub backpack_section_usable: [f32; 3],
     pub backpack_section_weapon: [f32; 3],
     pub backpack_section_passive: [f32; 3],
     pub backpack_row_weapon: [f32; 3],
     pub backpack_row_passive: [f32; 3],
     pub backpack_row_equipped: [f32; 3],
+    // HP HUD bar (top-left)
+    pub hp_bar_margin_x: i32,
+    pub hp_bar_margin_y: i32,
+    pub hp_bar_bar_width: i32,
+    pub hp_bar_bar_height: i32,
+    /// When `Some(n)` and n > 0, frame inset by `n` base px × ui_scale between outer and inner track.
+    pub hp_bar_border_px: Option<i32>,
+    pub hp_bar_track: [f32; 3],
+    pub hp_bar_fill: [f32; 3],
+    pub hp_bar_border: [f32; 3],
+    pub hp_bar_label: [f32; 3],
 }
 
 impl Default for UiTheme {
@@ -55,12 +67,22 @@ impl Default for UiTheme {
             backpack_padding: 16,
             backpack_slot_height: 24,
             backpack_border_top_px: 2,
+            backpack_panel_title: [0.95, 0.82, 0.45],
             backpack_section_usable: [0.9, 0.85, 0.75],
             backpack_section_weapon: [0.85, 0.82, 0.72],
             backpack_section_passive: [0.78, 0.76, 0.82],
             backpack_row_weapon: [0.88, 0.84, 0.78],
             backpack_row_passive: [0.72, 0.68, 0.76],
             backpack_row_equipped: [0.95, 0.42, 0.32],
+            hp_bar_margin_x: 12,
+            hp_bar_margin_y: 10,
+            hp_bar_bar_width: 120,
+            hp_bar_bar_height: 14,
+            hp_bar_border_px: Some(1),
+            hp_bar_track: [0.18, 0.14, 0.16],
+            hp_bar_fill: [0.55, 0.78, 0.42],
+            hp_bar_border: [0.4, 0.36, 0.42],
+            hp_bar_label: [0.92, 0.88, 0.82],
         }
     }
 }
@@ -71,6 +93,8 @@ impl Default for UiTheme {
 struct UiThemeFile {
     dialogue: DialogueThemeFile,
     backpack: BackpackThemeFile,
+    #[serde(default)]
+    hp_bar: HpBarThemeFile,
 }
 
 #[derive(Debug, Deserialize, Default)]
@@ -99,12 +123,27 @@ struct BackpackThemeFile {
     padding: Option<i32>,
     slot_height: Option<i32>,
     border_top_px: Option<i32>,
+    panel_title: Option<[f32; 3]>,
     section_usable: Option<[f32; 3]>,
     section_weapon: Option<[f32; 3]>,
     section_passive: Option<[f32; 3]>,
     row_weapon: Option<[f32; 3]>,
     row_passive: Option<[f32; 3]>,
     row_equipped: Option<[f32; 3]>,
+}
+
+#[derive(Debug, Deserialize, Default)]
+#[serde(default)]
+struct HpBarThemeFile {
+    margin_x: Option<i32>,
+    margin_y: Option<i32>,
+    bar_width: Option<i32>,
+    bar_height: Option<i32>,
+    border_px: Option<i32>,
+    track: Option<[f32; 3]>,
+    fill: Option<[f32; 3]>,
+    border: Option<[f32; 3]>,
+    label: Option<[f32; 3]>,
 }
 
 impl From<DialogueThemeFile> for UiTheme {
@@ -143,6 +182,9 @@ impl UiTheme {
         if let Some(v) = f.border_top_px {
             self.backpack_border_top_px = v;
         }
+        if let Some(v) = f.panel_title {
+            self.backpack_panel_title = v;
+        }
         if let Some(v) = f.panel_fill {
             self.backpack_panel_fill = v;
         }
@@ -171,6 +213,36 @@ impl UiTheme {
             self.backpack_row_equipped = v;
         }
     }
+
+    fn merge_hp_bar(&mut self, f: HpBarThemeFile) {
+        if let Some(v) = f.margin_x {
+            self.hp_bar_margin_x = v;
+        }
+        if let Some(v) = f.margin_y {
+            self.hp_bar_margin_y = v;
+        }
+        if let Some(v) = f.bar_width {
+            self.hp_bar_bar_width = v;
+        }
+        if let Some(v) = f.bar_height {
+            self.hp_bar_bar_height = v;
+        }
+        if f.border_px.is_some() {
+            self.hp_bar_border_px = f.border_px;
+        }
+        if let Some(v) = f.track {
+            self.hp_bar_track = v;
+        }
+        if let Some(v) = f.fill {
+            self.hp_bar_fill = v;
+        }
+        if let Some(v) = f.border {
+            self.hp_bar_border = v;
+        }
+        if let Some(v) = f.label {
+            self.hp_bar_label = v;
+        }
+    }
 }
 
 #[derive(Debug)]
@@ -196,5 +268,6 @@ pub fn load_theme() -> Result<UiTheme, ThemeLoadError> {
         serde_json::from_str(&s).map_err(|e| ThemeLoadError::Json(e, path.clone()))?;
     let mut theme = UiTheme::from(file.dialogue);
     theme.merge_backpack(file.backpack);
+    theme.merge_hp_bar(file.hp_bar);
     Ok(theme)
 }

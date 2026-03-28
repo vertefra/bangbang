@@ -14,7 +14,10 @@
 mod loader;
 mod tree;
 
-pub use tree::{Branch, Conversation, Node};
+pub use tree::{
+    Branch, Conversation, ConversationLoadError, DialogueCondition, DialogueEffect, DialogueParseError,
+    Node,
+};
 
 use crate::state::WorldState;
 use std::collections::HashMap;
@@ -64,40 +67,15 @@ pub fn current_display<'a>(
     node_id: &str,
     line_index: u32,
 ) -> Option<&'a str> {
-    let lines = conv.node_lines(node_id);
-    let i = line_index as usize;
-    if i < lines.len() {
-        Some(lines[i])
-    } else {
-        None
-    }
+    conv.node_lines(node_id)
+        .get(line_index as usize)
+        .map(String::as_str)
 }
 
-/// Apply effect string to story state. Format: "set_flag:name", "set_path:name", "start_quest:id", "complete_quest:id".
-fn apply_effect(effect: &str, world_state: &mut WorldState) {
-    let effect = effect.trim();
-    if let Some(flag) = effect.strip_prefix("set_flag:") {
-        world_state.set_flag(flag.trim());
-        return;
-    }
-    if let Some(path) = effect.strip_prefix("set_path:") {
-        world_state.choose_path(path.trim());
-        return;
-    }
-    if let Some(id) = effect.strip_prefix("start_quest:") {
-        world_state.start_quest(id.trim());
-        return;
-    }
-    if let Some(id) = effect.strip_prefix("complete_quest:") {
-        world_state.complete_quest(id.trim());
-        return;
-    }
-    log::warn!("dialogue effect has unknown prefix: {:?}", effect);
-}
-
-/// Returns true if the conversation's `require_state` condition is satisfied (or if there is no condition).
-pub fn state_satisfied(conv: &Conversation, world_state: &WorldState) -> bool {
-    let req = match &conv.require_state {
+/// True if `cond` is missing, empty, or matches story state (same syntax as branch conditions).
+/// Used for doors and other string-gated content; parse errors are logged and treated as not satisfied.
+pub fn world_state_satisfies(cond: Option<&str>, world_state: &WorldState) -> bool {
+    let req = match cond {
         Some(r) => r,
         None => return true,
     };
@@ -105,7 +83,21 @@ pub fn state_satisfied(conv: &Conversation, world_state: &WorldState) -> bool {
     if req.is_empty() {
         return true;
     }
-    tree::condition_matches(req, world_state)
+    match DialogueCondition::parse(req) {
+        Ok(c) => c.matches(world_state),
+        Err(e) => {
+            log::warn!("dialogue condition: {e} (input: {req:?})");
+            false
+        }
+    }
+}
+
+/// Returns true if the conversation's `require_state` condition is satisfied (or if there is no condition).
+pub fn state_satisfied(conv: &Conversation, world_state: &WorldState) -> bool {
+    match &conv.require_state {
+        None => true,
+        Some(c) => c.matches(world_state),
+    }
 }
 
 /// First node to show when opening a conversation: follows `start`, then auto-advances through any
@@ -169,7 +161,7 @@ pub fn advance(
         }
     };
     for effect in &node.effects {
-        apply_effect(effect, world_state);
+        effect.apply(world_state);
     }
     let next_id = node.resolve_next(world_state);
     match next_id {
@@ -192,18 +184,34 @@ mod tests {
 
     fn dummy_conv_with_req(req: Option<&str>) -> Conversation {
         let mut conv = Conversation::one_line("dummy");
-        conv.require_state = req.map(|s| s.to_string());
+        conv.require_state = req
+            .filter(|s| !s.trim().is_empty())
+            .map(|s| DialogueCondition::parse(s).expect("test condition"));
         conv
+    }
+
+    #[test]
+    fn world_state_satisfies_matches_state_satisfied_empty() {
+        let w = WorldState::default();
+        assert!(world_state_satisfies(None, &w));
+        assert!(world_state_satisfies(Some(""), &w));
+        assert!(world_state_satisfies(Some("   "), &w));
+        let conv = dummy_conv_with_req(None);
+        assert!(state_satisfied(&conv, &w));
     }
 
     #[test]
     fn test_quest_effects() {
         let mut w = WorldState::default();
-        apply_effect("start_quest:find_dog", &mut w);
+        DialogueEffect::parse("start_quest:find_dog")
+            .unwrap()
+            .apply(&mut w);
         assert!(w.quest_active("find_dog"));
         assert!(!w.quest_complete("find_dog"));
 
-        apply_effect("complete_quest:find_dog", &mut w);
+        DialogueEffect::parse("complete_quest:find_dog")
+            .unwrap()
+            .apply(&mut w);
         assert!(!w.quest_active("find_dog"));
         assert!(w.quest_complete("find_dog"));
     }
@@ -259,6 +267,18 @@ mod tests {
             ),
             Some("placeholder")
         );
+    }
+
+    #[test]
+    fn from_json_rejects_unknown_effect() {
+        let json = r#"{"start":"a","nodes":{"a":{"line":"x","effects":["not_a_real_prefix:1"]}}}"#;
+        assert!(tree::Conversation::from_json(json).is_err());
+    }
+
+    #[test]
+    fn from_json_rejects_unknown_branch_condition() {
+        let json = r#"{"start":"a","nodes":{"a":{"branches":[{"condition":"unknown:x","next":"b"}]},"b":{"line":"y"}}}"#;
+        assert!(tree::Conversation::from_json(json).is_err());
     }
 
     #[test]

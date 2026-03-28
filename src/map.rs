@@ -74,7 +74,7 @@ pub struct TilesetDraw {
     pub floor: u32,
     pub wall: u32,
     /// If true, each blocking cell picks a Wang-style tile from the 4×4 sheet from neighbor layout
-    /// (CPU renderer). `wall` is ignored for drawing in that case.
+    /// (GPU tilemap pass via `render::wang_wall_sheet_index`). `wall` is ignored for drawing in that case.
     #[serde(default)]
     pub wang_autotile: bool,
 }

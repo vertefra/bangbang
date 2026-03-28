@@ -9,8 +9,13 @@
 //! - **[`NpcConfig`]** — merged at load time (`map_loader`): position from the map, rest from the character file.
 //!
 //! Authoring reference: repository `docs/npc.md`. Map doors: `docs/maps.md` (`MapDoor`).
+//!
+//! ## Game bootstrap
+//!
+//! - **[`GameConfig`]** — `assets/game.json`: initial map id, optional demo backpack seed, window title.
 
 use serde::Deserialize;
+use std::path::PathBuf;
 
 /// One NPC instance on a map: `assets/maps/{map}.map/npc.json` array element.
 ///
@@ -46,6 +51,13 @@ pub struct MapDoor {
     pub spawn: [f32; 2],
     #[serde(default = "default_door_require_confirm")]
     pub require_confirm: bool,
+    /// When set, transition only if this matches [`crate::dialogue::world_state_satisfies`]
+    /// (e.g. `flag:mom_intro_done`). Otherwise the door shows [`Self::deny_message`] and does not transition.
+    #[serde(default)]
+    pub require_state: Option<String>,
+    /// Shown as a transient overworld banner when `require_state` is set and not satisfied.
+    #[serde(default)]
+    pub deny_message: Option<String>,
     /// Optional door prop id. `"south"` resolves to `assets/props/south.door/` and
     /// `"southHeavy"` resolves to `assets/props/southHeavy.door/` by convention.
     /// `"none"` (or a missing field) means transition-only with no door sprite.
@@ -102,4 +114,60 @@ fn default_scale() -> [f32; 2] {
 
 fn default_color() -> [f32; 4] {
     [0.2, 0.6, 1.0, 1.0]
+}
+
+/// Top-level game bootstrap: `assets/game.json`.
+#[derive(Debug, Clone, Deserialize)]
+pub struct GameConfig {
+    /// Map id passed to [`crate::map_loader::load_map`] (e.g. `mumhome.secondFloor`).
+    pub start_map: String,
+    /// When true, [`crate::skills::seed_demo_backpack`] runs at startup.
+    pub seed_demo_backpack: bool,
+    /// Window title: applied in the binary when creating the window (`Window::default_attributes().with_title(...)`).
+    pub window_title: String,
+}
+
+#[derive(Debug)]
+pub enum GameConfigError {
+    Io(std::io::Error, PathBuf),
+    Json(serde_json::Error, PathBuf),
+    Invalid { path: PathBuf, message: String },
+}
+
+impl std::fmt::Display for GameConfigError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::Io(e, p) => write!(f, "IO error at {}: {}", p.display(), e),
+            Self::Json(e, p) => write!(f, "JSON error at {}: {}", p.display(), e),
+            Self::Invalid { path, message } => {
+                write!(f, "invalid game config at {}: {}", path.display(), message)
+            }
+        }
+    }
+}
+
+impl std::error::Error for GameConfigError {}
+
+impl GameConfig {
+    /// Load and validate `assets/game.json`. Fails if the file is missing, not valid JSON, or has empty required strings.
+    pub fn load() -> Result<Self, GameConfigError> {
+        let path = crate::paths::asset_root().join("game.json");
+        let s =
+            std::fs::read_to_string(&path).map_err(|e| GameConfigError::Io(e, path.clone()))?;
+        let cfg: GameConfig =
+            serde_json::from_str(&s).map_err(|e| GameConfigError::Json(e, path.clone()))?;
+        if cfg.start_map.trim().is_empty() {
+            return Err(GameConfigError::Invalid {
+                path: path.clone(),
+                message: "start_map must be non-empty".into(),
+            });
+        }
+        if cfg.window_title.trim().is_empty() {
+            return Err(GameConfigError::Invalid {
+                path,
+                message: "window_title must be non-empty".into(),
+            });
+        }
+        Ok(cfg)
+    }
 }
