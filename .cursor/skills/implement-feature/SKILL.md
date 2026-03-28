@@ -158,13 +158,13 @@ This is a **draft**. Do not execute it yet.
 
 Dispatch a `planner-agent` subagent. Pass it:
 1. The Feature Brief from Phase 5.
-2. The draft `plan.main.md` from Phase 6.
+2. The draft plan file from Phase 6 (`plan.<task-name>.md`).
 
 The planner will return a structured review: what's good, what's bad, and concrete suggestions.
 
 **On APPROVE** — proceed to Phase 8.
 
-**On REVISE** — incorporate the planner's suggestions into `plan.main.md`. Then send the revised plan back to the planner for another pass. Repeat until the verdict is APPROVE or you've done two revision rounds (to avoid infinite loops — at that point, use your judgment to finalize).
+**On REVISE** — incorporate the planner's suggestions into the draft plan file from Phase 6. Then send the revised plan back to the planner for another pass. Repeat until the verdict is APPROVE or you've done two revision rounds (to avoid infinite loops — at that point, use your judgment to finalize).
 
 This back-and-forth is the most valuable part of the workflow. A plan that survives critique before execution saves rework during execution.
 
@@ -209,4 +209,39 @@ After all steps complete:
 | Known pitfalls, anti-patterns | `docs/antipatterns.md` |
 
 5. **Antipatterns** — Check `docs/antipatterns.md`. If any new code violates a listed pattern, fix it.
-6. **Report to user** — Summarize what was done, what changed, and any decisions made during execution.
+6. **Report to user** — Summarize what was done, what changed, and any decisions made during execution. Then proceed to **Phase 10**.
+
+---
+
+## Phase 10 — User validation and iteration
+
+After Phase 9, **do not** treat the feature as finished until the user confirms it.
+
+1. **Ask the user to test** — Run the game (and automated tests if relevant) and verify behaviour matches the goal.
+2. **Ask whether more adjustments are needed** — Invite concrete feedback (bugs, UX, scope tweaks).
+3. **Iterate** — If adjustments are needed, delegate to the same subagents as in Phase 8 (`implementation-agent`, `mcp-asset-creator`, etc.), re-apply Phase 9 checks for the new changes, and return to step 1. Continue until the user says they are **satisfied**.
+
+Use a feature branch for this work (not direct commits to `main`) so Phases 11–12 can diff against `main`.
+
+---
+
+## Phase 11 — PR review (pr-reviewer subagent)
+
+When the user is satisfied with behaviour:
+
+1. **Prepare context for review** — From repo root, ensure `main` is up to date (`git fetch origin` as needed). Capture `git diff <base>...HEAD` (three-dot, default base **`main`** or `origin/main` per `.cursor/agents/pr-reviewer.md`).
+2. **Dispatch `pr-reviewer`** — Pass the diff (and base branch name). Follow that subagent’s inputs: see `AGENTS.md` → `subagent_pr_review` and `.cursor/agents/pr-reviewer.md`.
+3. **Iterate** — If the verdict is **REQUEST_CHANGES** (or the user wants fixes from the review), address findings via subagents, commit as needed, refresh the diff, and run **another** `pr-reviewer` pass. Repeat until the verdict is **APPROVE** (or **COMMENT** with no blocking issues) and you are satisfied the branch is ready to ship.
+
+---
+
+## Phase 12 — Commit, push, open PR
+
+When Phase 11 is complete:
+
+1. **Commit** — Stage and commit any remaining changes with a clear message. Do not leave uncommitted work that belongs in this feature.
+2. **Push** — Push the feature branch to `origin` (or the user’s remote).
+3. **Open a PR** — Create a pull request **against `main`** (GitHub CLI `gh pr create --base main`, or the GitHub MCP, or the hosting UI — use what the user’s environment supports).
+4. **Tell the user** — Confirm the PR is open, name the branch and PR link or number, and that review/merge can proceed on the platform.
+
+If the branch was already pushed and a PR already exists, update the user with the current state instead of duplicating a PR.
