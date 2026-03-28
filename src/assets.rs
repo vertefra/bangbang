@@ -427,7 +427,17 @@ mod tileset_tests {
         assert_eq!(
             (s.cols, s.rows, s.frame_width, s.frame_height),
             (4, 4, 32, 32),
-            "dustfall.junction uses farwest_ground; grid must match wang LUT in render/mod.rs"
+            "base desert wang sheet; grid must match wang LUT in render/mod.rs"
+        );
+    }
+
+    #[test]
+    fn dustfall_terrain_extends_sheet_with_custom_tiles() {
+        let s = load_tileset("dustfall_terrain", None).expect("load dustfall_terrain");
+        assert_eq!(
+            (s.cols, s.rows, s.frame_width, s.frame_height),
+            (4, 5, 32, 32),
+            "128×160 sheet: rows 0–3 wang desert, row 4 slots 0–1 = dirt path & cobblestone"
         );
     }
 

@@ -1,0 +1,25 @@
+{
+  "width": 32,
+  "height": 48,
+  "tile_size": 32,
+  "player_start": [496, 160],
+  "tileset": "dustfall_terrain",
+  "tileset_tile_size": 32,
+  "tile_palette": "default",
+  "tileset_draw": {
+    "floor": 6,
+    "wall": 5,
+    "wang_autotile": true,
+    "path": 16,
+    "cobble": 17
+  },
+  "tiles": {
+    "fill": 0,
+    "perimeter": 1,
+    "rects": [
+      { "id": 1, "x": 0, "y": 4, "w": 15, "h": 43 },
+      { "id": 1, "x": 16, "y": 4, "w": 16, "h": 43 },
+      { "id": 2, "x": 15, "y": 4, "w": 1, "h": 43 }
+    ]
+  }
+}

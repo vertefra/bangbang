@@ -16,10 +16,12 @@ A town built into the side of a red-rock canyon. The upper level is for the "res
 
 The immediate area surrounding the town. Open plains, cacti, and dusty trails.
 
+**Corporate expansion:** The **Eastern Syndicate** is the **claims-and-expansion** arm of the same **corporate interests** as the **First National Bank** and **Mr. Sterling** (see `story/context.md`, §4). Syndicate survey markers and hired guards on the trail are Sterling-aligned pressure in the field—not a rival company.
+
 | Location | Description | Notable NPCs |
 | --- | --- | --- |
 | The Hermit’s Shack | A ramshackle hut built against a cliff face, roughly 2 miles North of town. | The Headhunter (The "Edgy" Veteran) |
-| The Old Mine Trail | A winding path leading into the mountains. Evidence of the "Corporate" expansion is everywhere. | Bandit Scouts, Calamity Kid (Rival) |
+| The Old Mine Trail | A winding path into the mountains. **Eastern Syndicate** stakes and faded claim boards line the route; evidence of corporate expansion toward the **Old Mine** is everywhere. | Bandit Scouts, Calamity Kid (Rival) |
 | The Watering Hole | A rare pond surrounded by greenery. A prime spot for finding Usable Skills (Herbs). | Wild Coyotes, Traveling Merchants |
 
 3. Resident Directory
@@ -27,7 +29,7 @@ The immediate area surrounding the town. Open plains, cacti, and dusty trails.
 | Resident | Role / whereabouts |
 | --- | --- |
 | Martha | Lives at Billy’s House. Provides narrative context and HP recovery. |
-| Mr. Sterling | Lives in a suite above the Bank. Represents the high-society/corporate interest. |
+| Mr. Sterling | Lives in a suite above the Bank. Represents high-society **corporate interest**; aligned with **Eastern Syndicate** expansion toward the mine (finance and claims are the same bloc). |
 | Sheriff Miller | Usually found in his office or patrolling the upper street. |
 | The Headhunter | Lives in isolation in the Scrublands. He is the bridge between the Law and Renegade paths. |
 | Silas "Swift-Finger" | A drifter with no fixed address; can often be found at the Saloon or the Old Mine. |

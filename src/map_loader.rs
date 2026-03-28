@@ -373,12 +373,12 @@ mod tests {
     }
 
     #[test]
-    fn dustfall_junction_loads_farwest_ground_tileset() {
+    fn dustfall_junction_loads_dustfall_terrain_tileset() {
         let d = crate::map_loader::load_map("dustfall.junction").expect("map loads");
         let s = d
             .tileset
-            .expect("dustfall.junction loads farwest_ground");
-        assert_eq!((s.cols, s.rows, s.frame_width), (4, 4, 32));
+            .expect("dustfall.junction loads dustfall_terrain");
+        assert_eq!((s.cols, s.rows, s.frame_width), (4, 5, 32));
         let td = d
             .tilemap
             .tileset_draw
@@ -386,6 +386,26 @@ mod tests {
             .expect("dustfall.junction sets tileset_draw for wang ground");
         assert!(td.wang_autotile);
         assert_eq!(td.floor, 6);
+        assert_eq!(td.path, Some(16));
+        assert_eq!(td.cobble, Some(17));
+    }
+
+    #[test]
+    fn scrublands_red_rock_road_loads_trail_map() {
+        let d = crate::map_loader::load_map("scrublands.redRockRoad").expect("map loads");
+        assert_eq!(d.doors.len(), 1);
+        assert_eq!(d.doors[0].to_map, "dustfall.junction");
+        assert!(
+            d.props.iter().any(|p| p.id == "railCart"),
+            "scene 1 rail cart prop"
+        );
+        let td = d
+            .tilemap
+            .tileset_draw
+            .as_ref()
+            .expect("trail uses tileset_draw.path");
+        assert_eq!(td.path, Some(16));
+        assert_eq!(td.cobble, Some(17));
     }
 
     #[test]

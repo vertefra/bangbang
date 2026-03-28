@@ -3,7 +3,7 @@
 use crate::assets::LoadedSheet;
 use crate::gpu::pass_common::{PassFrameParams, SubBatch};
 use crate::gpu::GpuRenderer;
-use crate::map::Tilemap;
+use crate::map::{Tilemap, LOGICAL_COBBLE_TILE_ID, LOGICAL_PATH_TILE_ID};
 use crate::render::color::packed_rgb_to_linear;
 use crate::render::{self, tilemap_is_binary_collision_only, wang_wall_sheet_index};
 
@@ -43,6 +43,10 @@ pub(crate) fn draw_tilemap_pass(
                     let logical = tilemap.tile_at(x, y).unwrap_or(0);
                     let tile_id = if logical == 0 {
                         td.floor
+                    } else if logical == LOGICAL_PATH_TILE_ID {
+                        td.path.unwrap_or(td.floor)
+                    } else if logical == LOGICAL_COBBLE_TILE_ID {
+                        td.cobble.unwrap_or(td.floor)
                     } else if td.wang_autotile {
                         wang_wall_sheet_index(tilemap, x, y)
                     } else {

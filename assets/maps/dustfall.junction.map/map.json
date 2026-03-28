@@ -3,13 +3,15 @@
   "height": 48,
   "tile_size": 32,
   "player_start": [512, 688],
-  "tileset": "farwest_ground",
+  "tileset": "dustfall_terrain",
   "tileset_tile_size": 32,
   "tile_palette": "default",
   "tileset_draw": {
     "floor": 6,
     "wall": 5,
-    "wang_autotile": true
+    "wang_autotile": true,
+    "path": 16,
+    "cobble": 17
   },
   "tiles": {
     "fill": 0,
@@ -20,7 +22,9 @@
       { "id": 1, "x": 21, "y": 12, "w": 8,  "h": 5 },
       { "id": 1, "x": 30, "y": 11, "w": 9,  "h": 6 },
       { "id": 1, "x": 40, "y": 8, "w": 11, "h": 9 },
-      { "id": 1, "x": 52, "y": 11, "w": 10, "h": 6 }
+      { "id": 1, "x": 52, "y": 11, "w": 10, "h": 6 },
+      { "id": 3, "x": 4, "y": 18, "w": 56, "h": 4 },
+      { "id": 2, "x": 31, "y": 23, "w": 1, "h": 25 }
     ]
   }
 }

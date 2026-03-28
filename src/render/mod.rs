@@ -41,6 +41,8 @@ pub fn facing_sprite_row(d: Direction) -> u32 {
 /// `farwest_interior` and `farwest_ground`.
 const WANG16_SHEET_LUT: [u32; 16] = [6, 7, 10, 9, 2, 11, 4, 15, 5, 14, 1, 8, 3, 0, 13, 12];
 
+/// Neighbor probe for Wang autotile: uses palette walkability (not `id != 0`) so walkable path tiles
+/// (e.g. id 2) read as open ground next to blocking cliffs.
 fn tile_blocking_oob_wall(tilemap: &Tilemap, xi: i32, yi: i32) -> bool {
     if xi < 0 || yi < 0 {
         return true;
@@ -50,7 +52,7 @@ fn tile_blocking_oob_wall(tilemap: &Tilemap, xi: i32, yi: i32) -> bool {
     if x >= tilemap.width || y >= tilemap.height {
         return true;
     }
-    tilemap.tile_at(x, y).map(|t| t != 0).unwrap_or(true)
+    tilemap.is_blocking(x, y)
 }
 
 fn wang_corner_signature_and(tilemap: &Tilemap, x: u32, y: u32) -> usize {

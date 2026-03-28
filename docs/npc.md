@@ -37,7 +37,7 @@ Parsed as [`CharacterNpcConfig`](../src/config.rs) (`serde` ignores unknown keys
 
 ## Legacy layout: `assets/npc/{id}.npc.json`
 
-The loader tries **`{id}.npc/config.json` first**, then falls back to **`{id}.npc.json`** in `assets/npc/`. A deprecation warning is logged for the legacy file. Prefer the folder layout for new content.
+The loader tries **`{id}.npc/config.json` first**, then falls back to **`{id}.npc.json`** in `assets/npc/`. A deprecation warning is logged for the legacy file. **New content** must use the folder layout only. The repo should not ship duplicate legacy files next to an existing `{id}.npc/` folder—remove **`{id}.npc.json`** after migrating fields into **`{id}.npc/config.json`**. See [ASSET_STYLE_GUIDE.md](../assets/ASSET_STYLE_GUIDE.md) — *File layout*.
 
 ## Runtime merge (`NpcConfig`)
 
