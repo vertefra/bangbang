@@ -15,6 +15,7 @@ use bangbang::constants::{
 use bangbang::render;
 use bangbang::ui::{self, BackpackPanelLines};
 use bangbang::config::GameConfig;
+use bangbang::save_game;
 use bangbang::{assets, ecs, map, map_loader, render_settings, skills, state};
 use glam::Vec2;
 use hecs::World;
@@ -291,6 +292,31 @@ impl App {
         };
     }
 
+    fn apply_load_game(&mut self) -> Result<(), save_game::SaveError> {
+        let data = save_game::read_save_file()?;
+        let map_data = save_game::restore_world_from_save(
+            &data,
+            &mut self.game.world,
+            &mut self.game.story_state,
+        )?;
+        self.map.current_map_id = data.map_id;
+        self.map.doors = map_data.doors.clone();
+        self.map.tilemap = Some(map_data.tilemap);
+        self.map.tileset = map_data.tileset;
+        self.map.door_cooldown = DOOR_TRANSITION_COOLDOWN_SECS;
+        self.map.prev_door_overlap = None;
+        self.game.app_state = AppState::Overworld {
+            last_near_npc: false,
+            backpack_open: true,
+        };
+        if let Some(p) = skills::player_entity(&self.game.world) {
+            if let Ok(mut b) = self.game.world.get::<&mut ecs::Backpack>(p) {
+                skills::normalize_equipped_weapon(&mut b, &self.resources.skill_registry);
+            }
+        }
+        Ok(())
+    }
+
     fn update(&mut self, dt: f32) {
         if let AppState::Overworld { .. } = self.game.app_state {
             if let Some((_, t)) = &mut self.ui.overworld_toast {
@@ -311,6 +337,68 @@ impl App {
             &self.resources.skill_registry,
             &mut self.resources.dialogue_cache,
         );
+
+        if !matches!(
+            self.game.app_state,
+            AppState::Overworld {
+                backpack_open: true,
+                ..
+            }
+        ) {
+            self.game.input.take_save_game_request();
+            self.game.input.take_load_game_request();
+        }
+
+        if let AppState::Overworld {
+            backpack_open: true,
+            ..
+        } = self.game.app_state
+        {
+            if self.game.input.take_save_game_request() {
+                match save_game::capture_save(
+                    &self.game.world,
+                    &self.map.current_map_id,
+                    &self.game.story_state,
+                ) {
+                    Ok(data) => match save_game::write_save_file(&data) {
+                        Ok(()) => {
+                            self.ui.overworld_toast = Some((
+                                "Game saved.".to_string(),
+                                OVERWORLD_TOAST_DURATION_SECS,
+                            ));
+                        }
+                        Err(e) => {
+                            self.ui.overworld_toast = Some((
+                                format!("Save failed: {e}"),
+                                OVERWORLD_TOAST_DURATION_SECS,
+                            ));
+                        }
+                    },
+                    Err(e) => {
+                        self.ui.overworld_toast = Some((
+                            format!("Save failed: {e}"),
+                            OVERWORLD_TOAST_DURATION_SECS,
+                        ));
+                    }
+                }
+            }
+            if self.game.input.take_load_game_request() {
+                match self.apply_load_game() {
+                    Ok(()) => {
+                        self.ui.overworld_toast = Some((
+                            "Game loaded.".to_string(),
+                            OVERWORLD_TOAST_DURATION_SECS,
+                        ));
+                    }
+                    Err(e) => {
+                        self.ui.overworld_toast = Some((
+                            format!("Load failed: {e}"),
+                            OVERWORLD_TOAST_DURATION_SECS,
+                        ));
+                    }
+                }
+            }
+        }
 
         if let AppState::Overworld {
             backpack_open: false,

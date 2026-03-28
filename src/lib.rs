@@ -19,6 +19,7 @@ pub mod map_loader;
 pub mod paths;
 pub mod render;
 pub mod render_settings;
+pub mod save_game;
 pub mod skills;
 pub mod state;
 pub mod ui;

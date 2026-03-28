@@ -11,4 +11,4 @@ pub mod world;
 
 pub use app::AppState;
 pub use input::InputState;
-pub use world::WorldState;
+pub use world::{WorldState, WorldStateSnapshot};

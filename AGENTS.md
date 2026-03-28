@@ -5,6 +5,7 @@ load_always: [docs/architecture.md, docs/game.md]
 load_on_demand: [assets/ASSET_STYLE_GUIDE.md, docs/ui.md, docs/maps.md, docs/npc.md, docs/skills.md]
 load_on_demand_when: assets|art|style|ui|map|maps|tilemap|tileset|map.json|npc.json|\.npc/|conversation_id|skill|skills|backpack|inventory|weapon|beer
 subagent_mcp_assets: mcp-asset-creator — `.cursor/agents/mcp-asset-creator.md`; delegate for PixelLab MCP asset creation and keeping `assets/ASSET_STYLE_GUIDE.md` plus load_on_demand docs aligned
+subagent_pr_review: pr-reviewer — `.cursor/agents/pr-reviewer.md`; diff current branch vs base (default `main`) and check AGENTS.md + related docs
 
 ## exploration (pre_impl, required)
 where: module|file|component for feature
