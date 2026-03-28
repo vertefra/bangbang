@@ -95,6 +95,8 @@ Each entry spawns one entity with `MapProp` + `Transform` + `Sprite` + `SpriteSh
 
 **Collision:** Props are **visual only**. Blocking terrain must still be authored in `map.json` / `tile_palette` where the building should be impassable. **Opaque prop pixels are drawn over the tilemap** — yards, porches, and approaches the player should walk on need **transparent** pixels in `sheet.png` so underlying **walkable** tiles are visible (and the character is not covered by fake “ground” in the sprite).
 
+**Building consistency:** Buildings may have different footprints and sprite sizes, but a town set should still share one art language. Keep projection, pixel density, outline treatment, shadow direction, and background transparency treatment consistent across neighboring building props. If one building uses a painted ground plate or a different camera angle, it will stand out immediately in-game even when collision is correct.
+
 - **Wall rects** (sparse `tiles.rects` with a blocking palette id) should cover the prop sprite’s tile AABB on **north, east, and west**. An **extra southern** tile row may stay **walkable** when the sheet has a transparent porch or façade so the player can approach the door; misaligned or undersized rects let players walk **under** roof art.
 
 **Interior example:** `mumhome.firstFloor.map` / `mumhome.secondFloor.map` use generic prop ids (`bed`, `table`, `dresser`, `stove`) in `props.json`; sheets live under `assets/props/{id}.prop/`. Use **top-down orthographic** art that matches `farwest_interior` (PixelLab’s `create_isometric_tile` MCP tool targets **isometric blocks** and tends to read as crates — prefer hand-drawn sprites, a top-down generator, or another pipeline for furniture-sized props).

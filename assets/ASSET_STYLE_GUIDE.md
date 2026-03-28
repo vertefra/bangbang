@@ -47,11 +47,27 @@ Palette is limited and shared across tiles, characters, and props for a cohesive
 
 ## Buildings (structures)
 - **Camera**: **High top-down** (same as ground tilesets and map objects). Vertical walls show a sliver of roof; door reads on the **south** face unless the map calls for another facing.
-- **Scale**: Width/height in pixels should be a **multiple of the map `tile_size`** (e.g. 32) so one building lines up with collision rectangles. Prototype: match footprint in tiles (e.g. 11×8 cells → 352×256 px art at 32 px/tile).
+- **Size**: Building footprints may differ. A clinic can be smaller than a bank or saloon; variation in width/height is fine when it matches the intended gameplay footprint and street importance.
+- **Scale**: Width/height in pixels should be a **multiple of the map `tile_size`** (e.g. 32) so one building lines up with collision rectangles. Prototype: match footprint in tiles (e.g. 11×8 cells → 352×256 px art at 32 px/tile). Different building sizes are acceptable; inconsistent **pixel density** is not.
 - **Materials**: **Wood** frontier construction — planks and beams use Wood light/mid/dark (`#D4A574`, `#8B6914`, `#5C4A2E`); trim against sand uses Sand light/mid. Stone civic buildings (bank, jail) can add Dust/`#8B7355` and cool gray sparingly; still keep the warm dusty overall read.
 - **Roof**: Simple pitched roof, slightly darker than walls; avoid neon or saturated reds except small Accent accents (signage only).
 - **Readability**: Clear silhouette at gameplay zoom; door and porch readable in **3–5** major tones per surface; same outline rule as characters (all outlined or all lineless per area).
 - **Integration**: Deliver as a **single PNG**; engine prefers `assets/props/{id}.prop/sheet.png` + `sheet.json` (`rows`/`cols`, usually `1`×`1`) for map props, and `assets/props/{id}.door/` for door props. **Walkable yard / paths must be transparent pixels** — the map tilemap draws the ground and owns collision. Opaque pixels in the prop sit on top: if you paint sand into the PNG, it is **not** walkable in any special way (and can hide the player); cut it away or match `map.json` walkable tiles and rely on transparency so the tilemap shows through. Collision stays in `map.json`. Place `doors.json` rects on walkable tiles at the real door/steps.
+
+### Building style specification
+- **Town building perspective**: Use one shared projection for a building set. For Dustfall-style street buildings, the target is a **south-facing facade with a shallow roof reveal**. Avoid mixing that with steep three-quarter or isometric-looking roof masses in the same street row.
+- **Pixel density**: Doors, windows, signs, boards, stairs, and trim should be painted at the same apparent pixel scale across buildings. A larger building should have **more repeated modules**, not tinier pixels.
+- **Side walls**: Keep visible side walls minimal and consistent. Show them only when placement really needs a corner read, and keep the angle/shading language aligned with the rest of the set.
+- **Ground treatment**: Do **not** bake a large ground rectangle, yard patch, or full backdrop into one building when neighboring buildings rely on transparent surroundings. Porch steps, posts, awnings, and tight contact shadows are fine; the surrounding terrain should usually stay transparent so the map tilemap remains the ground.
+- **Shadow direction**: Use one light direction for the whole set. Exterior buildings should cast shadows the same way; do not mix left-cast and right-cast shadows within one town frontage.
+- **Line/outline treatment**: Keep outline weight and contrast consistent. Do not mix very heavy black contouring on one building with soft outline-less rendering on the next unless the whole area uses that treatment.
+- **Signage**: Signs can differ in width and wording, but should share a common treatment for border thickness, letter sizing, and readability at gameplay zoom.
+- **Surface detail**: Match texture complexity across the set. Do not place one building with dense plank/grain/window detail next to flatter simplified buildings unless you intentionally restyle the full set to that higher detail level.
+
+### Building review checklist
+- **Allowed**: Different footprints, different heights, different frontage widths, different numbers of windows/doors.
+- **Must match across a set**: projection, pixel density, outline treatment, shadow direction, ground transparency treatment, and overall detail level.
+- **Fail examples**: one building includes a painted sand backdrop while others are transparent; one uses a steep angled roof while the rest are facade-first; one uses much finer pixels for boards/signs than the rest.
 
 ## Characters & props
 - **Silhouette**: Clear and readable at target resolution; cowboy hat, bandana, gun belt, etc. should read at a glance.
