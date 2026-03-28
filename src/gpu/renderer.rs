@@ -577,6 +577,17 @@ impl GpuRenderer {
 
         let entity_chunks = draw_entities_pass(self, world, asset_store, pass_params);
 
+        #[cfg(feature = "debug")]
+        let entity_debug_borders = crate::gpu::pass_entity_debug::prepare_entity_debug_overlay(
+            self,
+            world,
+            asset_store,
+            pass_params,
+            &mut font,
+            ui_scale,
+            font_scale,
+        );
+
         draw_ui_pass(
             self,
             theme,
@@ -701,6 +712,16 @@ impl GpuRenderer {
                         }
                     }
                 }
+            }
+
+            #[cfg(feature = "debug")]
+            if let Some((vb, ib, n)) =
+                upload_batch(&self.device, "entity_debug", &entity_debug_borders)
+            {
+                pass.set_bind_group(1, &self.white.bind_group, &[]);
+                pass.set_vertex_buffer(0, vb.slice(..));
+                pass.set_index_buffer(ib.slice(..), wgpu::IndexFormat::Uint32);
+                pass.draw_indexed(0..n, 0, 0..1);
             }
 
             if let Some((vb, ib, n)) = upload_batch(&self.device, "white_over", &white_over) {

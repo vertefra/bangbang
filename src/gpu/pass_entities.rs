@@ -11,6 +11,138 @@ use crate::render::color::sprite_color_to_linear;
 use crate::render::{self, facing_sprite_row};
 use crate::ui::{layout, UiTheme};
 
+/// Screen-space sprite quad corners and sort depth (matches the on-screen sprite quad).
+pub(crate) struct SpriteLayout {
+    pub sx0: f32,
+    pub sy0: f32,
+    pub sx1: f32,
+    pub sy1: f32,
+    pub depth_y: f32,
+}
+
+pub(crate) enum SpriteDrawPayload {
+    Tex {
+        character_id: String,
+        u0: f32,
+        v0: f32,
+        u1: f32,
+        v1: f32,
+    },
+    Solid {
+        color: [f32; 4],
+    },
+}
+
+/// Shared sprite screen bounds + UVs / solid color for the main entity pass and debug overlays.
+pub(crate) fn compute_sprite_layout_and_payload(
+    r: &mut GpuRenderer,
+    asset_store: &mut AssetStore,
+    transform: &Transform,
+    sprite: &Sprite,
+    sprite_sheet: Option<&SpriteSheet>,
+    facing: Option<&Facing>,
+    anim_state: Option<&AnimationState>,
+    map_prop: Option<&MapProp>,
+    door_marker: Option<&DoorMarker>,
+    params: PassFrameParams,
+) -> (SpriteLayout, SpriteDrawPayload) {
+    let PassFrameParams {
+        cam_x,
+        cam_y,
+        half_w,
+        half_h,
+        rs,
+    } = params;
+    let world_to_screen_x = |wx: f32| -> f32 { (wx - cam_x) * rs + half_w };
+    let world_to_screen_y = |wy: f32| -> f32 { (wy - cam_y) * rs + half_h };
+
+    let row = facing.map(|f| facing_sprite_row(f.0)).unwrap_or(0);
+    let (anim_kind, frame_index, walk_bob) = anim_state
+        .map(|a| {
+            (
+                a.kind,
+                a.frame_index,
+                matches!(a.kind, AnimationKind::Walk) && (a.frame_index % 2 == 1),
+            )
+        })
+        .unwrap_or((AnimationKind::Idle, 0, false));
+
+    let (size_w, size_h, char_draw) = if let Some(ss) = sprite_sheet {
+        if let Some(sheet) = asset_store.get_sheet(&ss.character_id) {
+            r.ensure_character(&ss.character_id, sheet);
+            let cols = sheet.cols;
+            let c = match anim_kind {
+                AnimationKind::Idle => 0,
+                AnimationKind::Walk => {
+                    let walk_cols = (cols - 1).max(1);
+                    (1 + (frame_index % walk_cols)).min(cols.saturating_sub(1))
+                }
+            };
+            (
+                sheet.frame_width as f32 * transform.scale.x,
+                sheet.frame_height as f32 * transform.scale.y,
+                Some((
+                    ss.character_id.clone(),
+                    sheet,
+                    row.min(sheet.rows.saturating_sub(1)),
+                    c,
+                )),
+            )
+        } else {
+            (16.0 * transform.scale.x, 16.0 * transform.scale.y, None)
+        }
+    } else {
+        (16.0 * transform.scale.x, 16.0 * transform.scale.y, None)
+    };
+
+    let bob_off = if walk_bob { -1.0 } else { 0.0 };
+    let wx = transform.position.x - size_w * 0.5;
+    let wy = transform.position.y - size_h * 0.5 + bob_off;
+    let sx0 = world_to_screen_x(wx);
+    let sy0 = world_to_screen_y(wy);
+    let sx1 = world_to_screen_x(wx + size_w);
+    let sy1 = world_to_screen_y(wy + size_h);
+
+    let static_building = map_prop.is_some() || door_marker.is_some();
+    let depth_y = if static_building {
+        transform.position.y
+    } else {
+        transform.position.y + size_h * 0.5 + bob_off
+    };
+
+    let layout = SpriteLayout {
+        sx0,
+        sy0,
+        sx1,
+        sy1,
+        depth_y,
+    };
+
+    let payload = if let Some((cid, sheet, r_row, col)) = char_draw {
+        let src_x = col * sheet.frame_width;
+        let src_y = r_row * sheet.frame_height;
+        let tw = sheet.width as f32;
+        let th = sheet.height as f32;
+        let u0 = src_x as f32 / tw;
+        let u1 = (src_x + sheet.frame_width) as f32 / tw;
+        let v0 = src_y as f32 / th;
+        let v1 = (src_y + sheet.frame_height) as f32 / th;
+        SpriteDrawPayload::Tex {
+            character_id: cid,
+            u0,
+            v0,
+            u1,
+            v1,
+        }
+    } else {
+        SpriteDrawPayload::Solid {
+            color: sprite_color_to_linear(sprite.color),
+        }
+    };
+
+    (layout, payload)
+}
+
 /// World sprites in back-to-front order (smaller world depth Y drawn first).
 pub(crate) enum EntityDrawChunk {
     Textured {
@@ -28,16 +160,6 @@ pub(crate) fn draw_entities_pass(
     asset_store: &mut AssetStore,
     params: PassFrameParams,
 ) -> Vec<EntityDrawChunk> {
-    let PassFrameParams {
-        cam_x,
-        cam_y,
-        half_w,
-        half_h,
-        rs,
-    } = params;
-    let world_to_screen_x = |wx: f32| -> f32 { (wx - cam_x) * rs + half_w };
-    let world_to_screen_y = |wy: f32| -> f32 { (wy - cam_y) * rs + half_h };
-
     enum PendingDraw {
         Tex {
             cid: String,
@@ -74,72 +196,35 @@ pub(crate) fn draw_entities_pass(
         )>()
         .iter()
     {
-        let row = facing.map(|f| facing_sprite_row(f.0)).unwrap_or(0);
-        let (anim_kind, frame_index, walk_bob) = anim_state
-            .map(|a| {
-                (
-                    a.kind,
-                    a.frame_index,
-                    matches!(a.kind, AnimationKind::Walk) && (a.frame_index % 2 == 1),
-                )
-            })
-            .unwrap_or((AnimationKind::Idle, 0, false));
+        let (layout, payload) = compute_sprite_layout_and_payload(
+            r,
+            asset_store,
+            transform,
+            sprite,
+            sprite_sheet,
+            facing,
+            anim_state,
+            map_prop,
+            door_marker,
+            params,
+        );
+        let SpriteLayout {
+            sx0,
+            sy0,
+            sx1,
+            sy1,
+            depth_y,
+            ..
+        } = layout;
 
-        let (size_w, size_h, char_draw) = if let Some(ss) = sprite_sheet {
-            if let Some(sheet) = asset_store.get_sheet(&ss.character_id) {
-                r.ensure_character(&ss.character_id, sheet);
-                let cols = sheet.cols;
-                let c = match anim_kind {
-                    AnimationKind::Idle => 0,
-                    AnimationKind::Walk => {
-                        let walk_cols = (cols - 1).max(1);
-                        (1 + (frame_index % walk_cols)).min(cols.saturating_sub(1))
-                    }
-                };
-                (
-                    sheet.frame_width as f32 * transform.scale.x,
-                    sheet.frame_height as f32 * transform.scale.y,
-                    Some((
-                        ss.character_id.clone(),
-                        sheet,
-                        row.min(sheet.rows.saturating_sub(1)),
-                        c,
-                    )),
-                )
-            } else {
-                (16.0 * transform.scale.x, 16.0 * transform.scale.y, None)
-            }
-        } else {
-            (16.0 * transform.scale.x, 16.0 * transform.scale.y, None)
-        };
-
-        let bob_off = if walk_bob { -1.0 } else { 0.0 };
-        let wx = transform.position.x - size_w * 0.5;
-        let wy = transform.position.y - size_h * 0.5 + bob_off;
-        let sx0 = world_to_screen_x(wx);
-        let sy0 = world_to_screen_y(wy);
-        let sx1 = world_to_screen_x(wx + size_w);
-        let sy1 = world_to_screen_y(wy + size_h);
-
-        // Tall map props / doors: sort by sprite center so actors south of the building
-        // (larger foot Y) draw in front of the foundation. Actors use foot (bottom edge) depth.
-        let static_building = map_prop.is_some() || door_marker.is_some();
-        let depth_y = if static_building {
-            transform.position.y
-        } else {
-            transform.position.y + size_h * 0.5 + bob_off
-        };
-
-        let pending = if let Some((cid, sheet, r_row, col)) = char_draw {
-            let src_x = col * sheet.frame_width;
-            let src_y = r_row * sheet.frame_height;
-            let tw = sheet.width as f32;
-            let th = sheet.height as f32;
-            let u0 = src_x as f32 / tw;
-            let u1 = (src_x + sheet.frame_width) as f32 / tw;
-            let v0 = src_y as f32 / th;
-            let v1 = (src_y + sheet.frame_height) as f32 / th;
-            PendingDraw::Tex {
+        let pending = match payload {
+            SpriteDrawPayload::Tex {
+                character_id: cid,
+                u0,
+                v0,
+                u1,
+                v1,
+            } => PendingDraw::Tex {
                 cid,
                 sx0,
                 sy0,
@@ -149,16 +234,14 @@ pub(crate) fn draw_entities_pass(
                 v0,
                 u1,
                 v1,
-            }
-        } else {
-            let c = sprite_color_to_linear(sprite.color);
-            PendingDraw::Solid {
+            },
+            SpriteDrawPayload::Solid { color: c } => PendingDraw::Solid {
                 sx0,
                 sy0,
                 sx1,
                 sy1,
                 c,
-            }
+            },
         };
 
         seq = seq.wrapping_add(1);

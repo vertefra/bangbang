@@ -51,6 +51,7 @@ src/
 │   ├── pass_ui.rs       # HP, dialogue panel, toast (delegates backpack)
 │   ├── pass_backpack.rs # Backpack slots and skill icons
 │   ├── pass_debug.rs    # Debug HUD quads (feature-gated caller)
+│   ├── pass_entity_debug.rs # Per-sprite borders + coord labels (`--features debug`)
 │   ├── text_atlas.rs    # fontdue TTF → dynamic RGBA atlas
 │   └── shader.wgsl      # GPU shader
 ├── ui/
@@ -93,11 +94,16 @@ flowchart LR
 
 1. **Bootstrap**: `main` loads `GameConfig` from `assets/game.json` (start map id, optional demo backpack seed, window title), `render_settings::load()`, then `load_map` for the configured start map. `SkillRegistry::load_builtins` requires a readable `assets/skills/` with at least one `.json` skill. Maps to `hecs::World` and optionally seeds player inventory.
 2. **Update vs Render**: `RedrawRequested` triggers `App::update(dt)`, which consumes inputs, runs ECS physics/logic, handles dialogue tree states, and optionally prepares side-channel UI data like `BackpackPanelLines`. Afterwards, `App::draw()` builds a `gpu::FrameContext` and calls `gpu::GpuRenderer::draw_frame(&FrameContext { ... })`. For **minimal always-on HUD** (e.g. player HP bar), the renderer may perform a **read-only** `World` query to read a few scalars; avoid building large UI models or running game logic there (see [docs/antipatterns.md](antipatterns.md)).
-3. **GPU Render Passes**: The renderer runs distinct batches (Tilemap → Entities → UI Overlays → Debug Overlay). The **entity pass** Y-sorts draw order: larger world **Y** (further “south”) draws later so the player can appear in front of building props when standing south of them. [`MapProp`](../src/ecs/components.rs) and [`DoorMarker`](../src/ecs/components.rs) use **sprite center** as the sort depth; actors use the **bottom** of the sprite quad (approximate feet).
+3. **GPU Render Passes**: The renderer runs distinct batches (Tilemap → Entities → optional debug borders → UI Overlays → Debug HUD text). The **entity pass** Y-sorts draw order: larger world **Y** (further “south”) draws later so the player can appear in front of building props when standing south of them. [`MapProp`](../src/ecs/components.rs) and [`DoorMarker`](../src/ecs/components.rs) use **sprite center** as the sort depth; actors use the **bottom** of the sprite quad (approximate feet).
 
 ### Debug overlay
 
-Building with **`--features debug`** enables a developer HUD: `pass_debug::draw_debug_pass` (invoked from [`GpuRenderer::draw_frame`](../src/gpu/renderer.rs)) draws [`DebugOverlay`](../src/gpu/frame_context.rs) (smoothed FPS plus extra lines). The overlay text is built in **`main.rs`** from the player `Transform` and current [`Tilemap`](../src/map.rs) (`tile_coords_for_world`, palette `walkable` / `color`, `is_blocking`). There is no in-game toggle. See [docs/game.md](game.md) and [docs/ui.md](ui.md).
+Building with **`--features debug`** enables compile-time-only developer drawing (no in-game toggle):
+
+- **Per-entity overlays:** [`pass_entity_debug`](../src/gpu/pass_entity_debug.rs) draws a **red** screen-space border around each sprite AABB (same geometry as [`draw_entities_pass`](../src/gpu/pass_entities.rs) via shared `compute_sprite_layout_and_payload`) and a **black** `"{:.1},{:.1}"` label for world `Transform.position`. Borders are encoded **after** world sprites and **before** UI panel quads (`white_over`). Labels are queued into the font batch **before** regular UI text and **before** the FPS/tile [`DebugOverlay`](../src/gpu/frame_context.rs) lines so they sit under panels and the debug HUD.
+- **HUD:** `pass_debug::draw_debug_pass` draws [`DebugOverlay`](../src/gpu/frame_context.rs) (smoothed FPS plus extra lines). That overlay text is built in **`main.rs`** from the player `Transform` and current [`Tilemap`](../src/map.rs) (`tile_coords_for_world`, palette `walkable` / `color`, `is_blocking`). Entity borders/labels do **not** depend on `DebugOverlay` being `Some`.
+
+See [docs/game.md](game.md) and [docs/ui.md](ui.md).
 
 ## Subsystems & Paradigms
 
