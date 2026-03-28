@@ -2,7 +2,7 @@
   {
     "rect": [192, 544, 96, 32],
     "to_map": "mumhome.firstFloor",
-    "spawn": [192, 256],
+    "spawn": [192, 304],
     "require_confirm": false,
     "prop": "none"
   }

@@ -4,6 +4,8 @@ mod frame_context;
 mod pass_backpack;
 mod pass_common;
 mod pass_debug;
+#[cfg(feature = "debug")]
+mod pass_entity_debug;
 mod pass_entities;
 mod pass_tilemap;
 mod pass_ui;
