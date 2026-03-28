@@ -10,7 +10,9 @@
 //!   condition, the transition is blocked and `deny_message` is shown as a transient overworld
 //!   toast. See `docs/maps.md` for authoring.
 //! - **Cooldown**: after a successful transition, a short [`DOOR_TRANSITION_COOLDOWN_SECS`]
-//!   window suppresses overlap checks to prevent instant bounce-back.
+//!   window suppresses overlap checks to prevent instant bounce-back. When cooldown ends, overlap
+//!   is initialized from the current position so standing in the destination door rect does not
+//!   count as a new entry.
 
 use glam::Vec2;
 
@@ -60,7 +62,9 @@ pub fn poll_map_door_transition(
         *cooldown -= dt;
         if *cooldown <= 0.0 {
             *cooldown = 0.0;
-            *prev_door_overlap = None;
+            // Spawn or standing still inside a walk-through rect: if we cleared overlap here, the
+            // next frame would look like a fresh entry and re-trigger. Seed overlap from position.
+            *prev_door_overlap = first_overlapping_door_index(doors, player_pos);
         }
         return DoorPollResult::None;
     }
@@ -121,4 +125,104 @@ pub fn poll_map_door_transition(
     }
 
     result
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::state::WorldState;
+
+    fn test_door() -> MapDoor {
+        MapDoor {
+            rect: [192.0, 544.0, 96.0, 32.0],
+            to_map: "other".into(),
+            spawn: [0.0, 0.0],
+            require_confirm: false,
+            prop: None,
+            require_state: None,
+            deny_message: None,
+        }
+    }
+
+    #[test]
+    fn cooldown_end_inside_walk_through_does_not_retrigger() {
+        let doors = vec![test_door()];
+        let pos = Vec2::new(240.0, 560.0);
+        assert!(point_in_rect(pos, doors[0].rect));
+
+        let mut input = InputState::default();
+        let mut cooldown = DOOR_TRANSITION_COOLDOWN_SECS;
+        let mut prev: Option<usize> = None;
+        let world = WorldState::default();
+
+        let r = poll_map_door_transition(
+            &doors,
+            pos,
+            &mut input,
+            0.2,
+            &mut cooldown,
+            &mut prev,
+            &world,
+        );
+        assert!(matches!(r, DoorPollResult::None));
+        assert!(cooldown > 0.0);
+
+        let r = poll_map_door_transition(
+            &doors,
+            pos,
+            &mut input,
+            1.0,
+            &mut cooldown,
+            &mut prev,
+            &world,
+        );
+        assert!(matches!(r, DoorPollResult::None));
+        assert_eq!(cooldown, 0.0);
+        assert_eq!(prev, Some(0));
+
+        let r = poll_map_door_transition(
+            &doors,
+            pos,
+            &mut input,
+            0.016,
+            &mut cooldown,
+            &mut prev,
+            &world,
+        );
+        assert!(matches!(r, DoorPollResult::None));
+    }
+
+    #[test]
+    fn walk_through_triggers_once_on_entry() {
+        let doors = vec![test_door()];
+        let outside = Vec2::new(240.0, 500.0);
+        let inside = Vec2::new(240.0, 560.0);
+        let mut input = InputState::default();
+        let mut cooldown = 0.0;
+        let mut prev: Option<usize> = None;
+        let world = WorldState::default();
+
+        poll_map_door_transition(
+            &doors,
+            outside,
+            &mut input,
+            0.016,
+            &mut cooldown,
+            &mut prev,
+            &world,
+        );
+        assert_eq!(prev, None);
+
+        let r = poll_map_door_transition(
+            &doors,
+            inside,
+            &mut input,
+            0.016,
+            &mut cooldown,
+            &mut prev,
+            &world,
+        );
+        assert!(matches!(r, DoorPollResult::Transition(_)));
+        assert!(cooldown > 0.0);
+    }
 }

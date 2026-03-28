@@ -9,7 +9,7 @@
   {
     "rect": [160, 288, 64, 32],
     "to_map": "dustfall.junction",
-    "spawn": [240, 600],
+    "spawn": [240, 560],
     "require_confirm": false,
     "prop": "none",
     "require_state": "flag:mom_intro_done",
