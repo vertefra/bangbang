@@ -44,6 +44,7 @@ Palette is limited and shared across tiles, characters, and props for a cohesive
 - **Ground**: Sandy tones (Sand light/mid/dark, Dust) with small variation (cracks, pebbles, tracks) to avoid flat look.
 - **Collision**: Mark impassable tiles in map data; art can use Wood dark, stone, or fences to read as solid.
 - **Tile size**: Match map cell size (e.g. 32×32 or 48×48 for prototype; 96×96 for final). One tile = one cell.
+- **`dustfall_terrain`**: `assets/tiles/dustfall_terrain.png` — first **16** cells match **`farwest_ground`** (wang); cells **16–17** (row 5) are **dirt trail** and **cobblestone** for map logical ids **2** / **3**. Rebuild from base + procedural tiles with `scripts/build_dustfall_terrain_tileset.py` (Pillow).
 
 ## Buildings (structures)
 - **Camera**: **High top-down** (same as ground tilesets and map objects). Vertical walls show a sliver of roof; door reads on the **south** face unless the map calls for another facing.
@@ -84,19 +85,37 @@ The overworld draws each frame at **world size** ≈ **`frame_width` × `scale.x
 ## Prop and asset ids (naming)
 - **Reuse generic ids** for furniture, clutter, and anything that could appear in multiple interiors or towns: `bed`, `table`, `dresser`, `stove`, `cactus`, `barrels` — not character- or quest-tied names like `mumBed`.
 - **Named landmark props** (unique buildings tied to one place) may use a descriptive id (`billyHouse`, `dustfallSaloon`) when a generic name would be misleading. When in doubt for small reusable props, stay generic even if only one map references them today.
+- **`railCart`** (`assets/props/railCart.prop/`): **scene** prop for a dumped mine cart on **scrublands.redRockRoad**; currently uses **barrels** art as a **placeholder** until a dedicated busted-cart sprite is authored.
 
 ## Top-down furniture vs isometric generators
 - Interior props must match the **high top-down** camera used with wang interior tilesets. Tools that only emit **isometric cubes** (e.g. PixelLab MCP `create_isometric_tile`) usually read as **crates/blocks**, not beds or dressers — use orthographic top-down art instead.
 
 ## File layout
-- **Player only**: `assets/characters/player/` — `sheet.png`, `sheet.json` (not an NPC; no `npc.json` entry).
-- **NPCs and scene characters** (any id with `assets/npc/{id}.npc/config.json` or placed in `npc.json`): **`assets/npc/{id}.npc/`** — `config.json`, optional `sheet.png`, `sheet.json`, `portrait.png`. Legacy **`assets/npc/{id}.npc.json`** (single file) is still supported with a deprecation warning; prefer the folder layout.
-- **Dialogue portraits** (`assets/npc/{id}.npc/portrait.png`): optional **bust** image for the dialogue panel (see [docs/npc.md](../docs/npc.md)). **128×128** RGBA matches existing **`mom`**; avoid reusing the overworld **down** frame as the portrait—it reads as a miniature full-body icon. PixelLab **`create_map_object`** (e.g. **128×128**, description: head-and-shoulders, transparent bg) is a workable fit for character busts.
-- **Tiles**: `assets/tiles/` (or per-map tile sets as used by map loader).
-- **Maps**: `assets/maps/{id}.map/` — `map.json`, `npc.json`, optional `props.json`; art in same folder or shared tiles.
-- **Props (buildings, large objects)**: `assets/props/{id}.prop/` — `sheet.png`, `sheet.json` (grid). Referenced from map `props.json` by `id`. Use **generic** functional names for reusable props (`bed`, `dresser`); camelCase for multi-word ids (`billyHouse` for a named structure only when it is a specific landmark).
-- **Map doors (transitions)**: `doors.json` field **`prop`** → `assets/props/{id}.door/` by convention (for example `"south"` → `assets/props/south.door/`, `"southHeavy"` → `assets/props/southHeavy.door/`). Use **`"none"`** or omit the field for no sprite when the doorway is already drawn on a building prop or tiles. Same palette/outline rules as buildings.
-- **Skills (including weapons)**: `assets/skills/{id}.skill/` — **`config.json`** (`SkillDef`; weapons use `subcategory: "weapon"`), optional **`skill_image.png`** (96×96 RGBA, transparent background) for the backpack icon. Same folder-per-id pattern as `assets/npc/{id}.npc/`.
+
+**Canonical patterns** (match engine loaders and [docs/maps.md](../docs/maps.md)):
+
+| Asset kind | Path pattern | Notes |
+|------------|--------------|--------|
+| **Map** | `assets/maps/{id}.map/` | `map.json`, optional `npc.json`, `props.json`, `doors.json`, `scenes.json`. Id has **no** `.map` in JSON (e.g. `dustfall.junction`). |
+| **NPC** | `assets/npc/{id}.npc/` | **`config.json`** required for new work; optional `sheet.png`, `sheet.json`, `portrait.png`. |
+| **Prop** | `assets/props/{id}.prop/` | `sheet.png`, `sheet.json`; referenced from `props.json`. **camelCase** ids (e.g. `billyHouse`, `railCart`). |
+| **Door prop** | `assets/props/{id}.door/` | Same art rules as props; referenced from `doors.json` field **`prop`**. |
+| **Skill** | `assets/skills/{id}.skill/` | **`config.json`**; optional `skill_image.png`. **camelCase** ids (e.g. `rustyPeacemaker`). |
+| **Scene script** | `assets/scenes/{id}.scene.json` | **Single file** (not a folder). Referenced from map `scenes.json` as `scene_id` → `{id}` (see [docs/maps.md](../docs/maps.md) — `scenes.json`). |
+| **Dialogue** | `assets/dialogue/{conversation_id}.json` | Tree of nodes; `conversation_id` from NPC `config.json` or map `id`. |
+| **Tile palette** | `assets/tile_palettes/{id}.json` | Referenced by `map.json` field `tile_palette`. |
+| **Tiles** | `assets/tiles/{name}.png` (+ optional `{name}.json`) | Shared across maps; `map.json` `tileset` names the base. |
+| **Player** | `assets/characters/player/` | `sheet.png`, `sheet.json` only — not an NPC folder. |
+| **UI** | `assets/ui/theme.json` | Theme for dialogue and HUD (see [docs/ui.md](../docs/ui.md)). |
+| **Game bootstrap** | `assets/game.json` | Start map, window title, etc. ([`GameConfig`](../src/config.rs)). |
+| **Render / window** | `assets/config.json` | `render_scale`, window size ([`render_settings`](../src/render_settings.rs)). |
+
+**Details**
+
+- **NPCs**: Map placement uses `assets/maps/{map}.map/npc.json`; character data lives under **`assets/npc/{id}.npc/`** only. Legacy **`assets/npc/{id}.npc.json`** (flat file next to folders) is still loaded by the engine with a deprecation warning—**do not add new legacy files**; migrate to `{id}.npc/config.json`. See [docs/npc.md](../docs/npc.md).
+- **Dialogue portraits** (`assets/npc/{id}.npc/portrait.png`): optional **bust** for the dialogue panel. **128×128** RGBA matches **`mom`**; avoid reusing the overworld **down** frame as the portrait. PixelLab **`create_map_object`** (e.g. **128×128**, head-and-shoulders, transparent bg) works for busts.
+- **Props**: Use **generic** ids for reusable clutter (`bed`, `table`); **named** camelCase only for landmarks (`billyHouse`). **Walkable** yards must be **transparent** in `sheet.png` so the tilemap ground shows through.
+- **Map doors**: `doors.json` **`prop`** → `assets/props/{id}.door/`. **`"none"`** or omit = no door sprite.
 
 ---
 

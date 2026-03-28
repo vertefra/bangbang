@@ -5,5 +5,12 @@
     "spawn": [192, 304],
     "require_confirm": false,
     "prop": "none"
+  },
+  {
+    "rect": [992, 1504, 32, 32],
+    "to_map": "scrublands.redRockRoad",
+    "spawn": [1008, 128],
+    "require_confirm": false,
+    "prop": "none"
   }
 ]

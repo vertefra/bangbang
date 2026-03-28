@@ -53,12 +53,22 @@ The **sparse** format is recommended for most maps as it is much more concise. I
 ### `tileset_draw` shape
 
 ```json
-{ "floor": 6, "wall": 5, "wang_autotile": true }
+{ "floor": 6, "wall": 5, "wang_autotile": true, "path": 16, "cobble": 17 }
 ```
 
-- `floor` — index into the tileset grid for walkable cells (logical `0`). For PixelLab wang-16 sheets (`farwest_interior`, `farwest_ground`), index **6** is the all-floor wang tile (`base_tile_ids.lower` / `wang_0`). **Exterior** maps (e.g. `dustfall.junction`) use `farwest_ground` for desert plateau / street; **interiors** use `farwest_interior`.
+- `floor` — index into the tileset grid for walkable cells (logical `0`). For PixelLab wang-16 sheets (`farwest_interior`, `farwest_ground`), index **6** is the all-floor wang tile (`base_tile_ids.lower` / `wang_0`). **Exterior** maps may use `dustfall_terrain` (extends `farwest_ground` with custom slots) or plain `farwest_ground` for desert; **interiors** use `farwest_interior`.
 - `wall` — index into the tileset grid for blocking cells when `wang_autotile` is false or omitted.
 - `wang_autotile` (optional, default `false`) — when `true`, blocking cells choose a tile from a fixed 16-entry lookup for PixelLab-style 4×4 wang sets (straight edges, corners, thin segments). Implemented in `src/render/mod.rs` (`WANG16_SHEET_LUT`). Ignores `wall` for drawing.
+- `path` (optional) — sheet index for logical tile id **`2`** (dirt **trail** / mine road). Must be walkable in `tile_palette`. When omitted, id `2` draws like `floor` if defined in the palette. Wang neighbor probing uses palette **walkability** (`src/render/mod.rs`).
+- `cobble` (optional) — sheet index for logical tile id **`3`** (**cobblestone** town streets). Must be walkable in `tile_palette`. When omitted, id `3` draws like `floor`.
+
+### `dustfall_terrain` tileset (`assets/tiles/dustfall_terrain.png`)
+
+**128×160** PNG (4×5 grid at 32px): rows **0–3** match **`farwest_ground`** (wang desert + cliffs); row **4** adds custom art — index **16** = dirt trail, **17** = cobblestone (regenerate via `scripts/build_dustfall_terrain_tileset.py` after editing procedural tiles). Maps **`dustfall.junction`** and **`scrublands.redRockRoad`** reference `tileset: "dustfall_terrain"` with `path`/`cobble` pointing at **16** / **17**.
+
+### Path & street tiles (logical ids `2` and `3`)
+
+- **`2`** — dirt path (trail to other maps; **one tile wide** where authored). **`3`** — cobblestone band for **Dustfall** main drag. Define both in `assets/tile_palettes/{tile_palette}.json` as walkable. **scrublands.redRockRoad** is a **straight** north–south strip with **red-rock canyon** walls (`id` **1**) flanking a single **path** column; linked from **`dustfall.junction`** via invisible transition rects (`prop` omitted or `"none"`).
 
 ### `tile_palette` file shape (`assets/tile_palettes/{id}.json`)
 
@@ -157,6 +167,7 @@ Scenes are loaded on demand from `assets/scenes/{id}.scene.json` via `SceneCache
 
 ## Related
 
+- **Canonical asset paths** (maps, NPCs, props, scenes, dialogue, skills): [ASSET_STYLE_GUIDE.md](../assets/ASSET_STYLE_GUIDE.md) — *File layout*.
 - NPC character files, dialogue ids, and runtime merge: [npc.md](npc.md).
 - Rendering behavior with tilesets and wang autotile: [architecture.md](architecture.md), `src/render/mod.rs`.
 - Loader implementation: `src/map_loader.rs`, `src/map.rs`, `src/config.rs` (`MapNpcEntry`, `MapPropEntry`, `MapDoor`, `MapSceneTrigger`).

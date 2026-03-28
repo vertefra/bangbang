@@ -39,7 +39,13 @@ The "True Story" of Billy's father and the identity of the Antagonist shifts bas
 | Vitality | Hard Constraint | 5 Life Points (LP). Respawn at Doc Sawbones with Gold/Item penalty. |
 | Dialogue | POV Style | Silent Protagonist. The world reacts to Billy; Billy does not speak. |
 
-## 4. Initial Character Updates
+## 4. Corporate interests and the Eastern Syndicate
+
+**Corporate interest** in Dustfall is not a single building: it is the alliance of **finance** (the **First National Bank**, **Mr. Sterling**) and **territorial expansion** toward resources (the **Old Mine** and surrounding scrublands).
+
+The **Eastern Syndicate** is part of that same bloc. It is the **claims-and-expansion** face of the operation—survey stakes, “authorized claim” signage, and muscle on the ground (e.g. hired **Bandit Scouts** on **The Old Mine Trail**) enforce Syndicate control of the grade toward the mine. In dialogue and signage, “the Syndicate” refers to this arm; it is **not** a separate faction from Sterling and the Bank, but the **field operation** of aligned corporate interests.
+
+## 5. Initial Character Updates
 
 - **Silas:** A pivot character. Either a misunderstood friend or a primary target.
 - **Sheriff Miller:** Either an aging mentor or a corrupt enforcer for the Bank.

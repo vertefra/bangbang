@@ -68,6 +68,12 @@ impl TilePalette {
     }
 }
 
+/// Logical tile id for **trail / road** cells (walkable; distinct art via [`TilesetDraw::path`]).
+pub const LOGICAL_PATH_TILE_ID: u32 = 2;
+
+/// Logical tile id for **town street / cobble** (walkable; distinct art via [`TilesetDraw::cobble`]).
+pub const LOGICAL_COBBLE_TILE_ID: u32 = 3;
+
 /// When set, rendering maps each cell’s **logical** tile id to sheet indices in the GPU tilemap pass.
 #[derive(Clone, Debug, Deserialize, Serialize)]
 pub struct TilesetDraw {
@@ -77,6 +83,13 @@ pub struct TilesetDraw {
     /// (GPU tilemap pass via `render::wang_wall_sheet_index`). `wall` is ignored for drawing in that case.
     #[serde(default)]
     pub wang_autotile: bool,
+    /// Optional sheet index for [`LOGICAL_PATH_TILE_ID`] walkable “path” tiles (dirt road, guiding trail).
+    /// When omitted, id `2` draws like [`Self::floor`] if present in the palette as walkable.
+    #[serde(default)]
+    pub path: Option<u32>,
+    /// Optional sheet index for [`LOGICAL_COBBLE_TILE_ID`] walkable cobble / paved town streets.
+    #[serde(default)]
+    pub cobble: Option<u32>,
 }
 
 /// Tilemap data: grid of tile IDs stored row-major (`index = y * width + x`).

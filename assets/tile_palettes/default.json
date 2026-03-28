@@ -1,4 +1,6 @@
 {
   "0": { "color": [0.35, 0.38, 0.4], "walkable": true },
-  "1": { "color": [0.2, 0.18, 0.22], "walkable": false }
+  "1": { "color": [0.2, 0.18, 0.22], "walkable": false },
+  "2": { "color": [0.42, 0.32, 0.24], "walkable": true },
+  "3": { "color": [0.5, 0.46, 0.42], "walkable": true }
 }
