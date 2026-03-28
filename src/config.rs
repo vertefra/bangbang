@@ -81,6 +81,7 @@ impl MapDoor {
 }
 
 /// Character definition: `assets/npc/{id}.npc/config.json` preferred, else `assets/npc/{id}.npc.json`.
+/// Sprite sheets and portraits for that id live in the same **`{id}.npc/`** folder (see `docs/npc.md`).
 ///
 /// Unknown JSON keys are ignored by `serde`. There is **no** `position` field here — use the map’s `npc.json`.
 #[derive(Debug, Clone, Deserialize)]

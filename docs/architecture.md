@@ -40,7 +40,7 @@ src/
 ├── skills/
 │   ├── mod.rs           # Application logic (deal_damage, heal)
 │   ├── defs.rs          # json schema (SkillDef)
-│   ├── registry.rs      # SkillRegistry (auto-discovers assets/skills/*.json)
+│   ├── registry.rs      # SkillRegistry (auto-discovers assets/skills/{id}.skill/config.json)
 │   └── backpack_view.rs # Hotkeys, UI formatting
 ├── gpu/
 │   ├── renderer.rs      # GpuRenderer: wgpu pipelines, new/resize/upload, draw_frame orchestration
@@ -96,7 +96,7 @@ flowchart LR
     AppUpdate -->|submit| Gpu
 ```
 
-1. **Bootstrap**: `main` loads `GameConfig` from `assets/game.json` (start map id, optional demo backpack seed, window title), `render_settings::load()`, then `load_map` for the configured start map. `SkillRegistry::load_builtins` requires a readable `assets/skills/` with at least one `.json` skill. Maps to `hecs::World` and optionally seeds player inventory.
+1. **Bootstrap**: `main` loads `GameConfig` from `assets/game.json` (start map id, optional demo backpack seed, window title), `render_settings::load()`, then `load_map` for the configured start map. `SkillRegistry::load_builtins` requires a readable `assets/skills/` with at least one `{id}.skill/config.json`. Maps to `hecs::World` and optionally seeds player inventory.
 2. **Update vs Render**: `RedrawRequested` triggers `App::update(dt)`, which consumes inputs, runs ECS physics/logic, handles dialogue tree states, and optionally prepares side-channel UI data like `BackpackPanelLines`. Afterwards, `App::draw()` builds a `gpu::FrameContext` and calls `gpu::GpuRenderer::draw_frame(&FrameContext { ... })`. For **minimal always-on HUD** (e.g. player HP bar), the renderer may perform a **read-only** `World` query to read a few scalars; avoid building large UI models or running game logic there (see [docs/antipatterns.md](antipatterns.md)).
 3. **GPU Render Passes**: The renderer runs distinct batches (Tilemap → Entities → optional debug borders → UI Overlays → Debug HUD text). The **entity pass** Y-sorts draw order: larger world **Y** (further “south”) draws later so the player can appear in front of building props when standing south of them. [`MapProp`](../src/ecs/components.rs) and [`DoorMarker`](../src/ecs/components.rs) use **sprite center** as the sort depth; actors use the **bottom** of the sprite quad (approximate feet).
 

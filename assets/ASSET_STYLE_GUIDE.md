@@ -89,14 +89,14 @@ The overworld draws each frame at **world size** ≈ **`frame_width` × `scale.x
 - Interior props must match the **high top-down** camera used with wang interior tilesets. Tools that only emit **isometric cubes** (e.g. PixelLab MCP `create_isometric_tile`) usually read as **crates/blocks**, not beds or dressers — use orthographic top-down art instead.
 
 ## File layout
-- **Characters**: `assets/characters/{id}/` — `sheet.png`, `sheet.json`.
-- **NPCs**: `assets/npc/{id}.npc/` or `assets/npc/{id}.npc.json` plus sprites as referenced.
+- **Player only**: `assets/characters/player/` — `sheet.png`, `sheet.json` (not an NPC; no `npc.json` entry).
+- **NPCs and scene characters** (any id with `assets/npc/{id}.npc/config.json` or placed in `npc.json`): **`assets/npc/{id}.npc/`** — `config.json`, optional `sheet.png`, `sheet.json`, `portrait.png`. Legacy **`assets/npc/{id}.npc.json`** (single file) is still supported with a deprecation warning; prefer the folder layout.
 - **Dialogue portraits** (`assets/npc/{id}.npc/portrait.png`): optional **bust** image for the dialogue panel (see [docs/npc.md](../docs/npc.md)). **128×128** RGBA matches existing **`mom`**; avoid reusing the overworld **down** frame as the portrait—it reads as a miniature full-body icon. PixelLab **`create_map_object`** (e.g. **128×128**, description: head-and-shoulders, transparent bg) is a workable fit for character busts.
 - **Tiles**: `assets/tiles/` (or per-map tile sets as used by map loader).
 - **Maps**: `assets/maps/{id}.map/` — `map.json`, `npc.json`, optional `props.json`; art in same folder or shared tiles.
 - **Props (buildings, large objects)**: `assets/props/{id}.prop/` — `sheet.png`, `sheet.json` (grid). Referenced from map `props.json` by `id`. Use **generic** functional names for reusable props (`bed`, `dresser`); camelCase for multi-word ids (`billyHouse` for a named structure only when it is a specific landmark).
 - **Map doors (transitions)**: `doors.json` field **`prop`** → `assets/props/{id}.door/` by convention (for example `"south"` → `assets/props/south.door/`, `"southHeavy"` → `assets/props/southHeavy.door/`). Use **`"none"`** or omit the field for no sprite when the doorway is already drawn on a building prop or tiles. Same palette/outline rules as buildings.
-- **Skill icons**: `assets/skills/{id}.skill_image.png` — 96×96 RGBA PNG (transparent background). Rendered in the backpack panel as a square icon (scaled to slot height). Same pixel-art style and palette as characters; single item centered on a transparent bg.
+- **Skills (including weapons)**: `assets/skills/{id}.skill/` — **`config.json`** (`SkillDef`; weapons use `subcategory: "weapon"`), optional **`skill_image.png`** (96×96 RGBA, transparent background) for the backpack icon. Same folder-per-id pattern as `assets/npc/{id}.npc/`.
 
 ---
 

@@ -1,7 +1,8 @@
-//! Load character sprite sheets from PNG (`assets/characters/{id}/sheet.png`, optional `sheet.json`),
-//! NPC folders (`assets/npc/{id}.npc/sheet.png`), map props (`assets/props/{id}/sheet.png`),
-//! and map tilesets from `assets/tiles/{id}.png` with optional `assets/tiles/{id}.json` (`tile_size`; square 4×4 sheets infer 32 or 16 from dimensions when JSON is missing).
-//! Optional dialogue portraits: `assets/npc/{id}.npc/portrait.png` or `assets/characters/{id}/portrait.png`.
+//! Load character sprite sheets from PNG: **`assets/npc/{id}.npc/`** (sheet + optional `sheet.json`) for
+//! NPCs and scene characters; **`assets/characters/player/`** for the player only; then map props
+//! (`assets/props/{id}/sheet.png`); map tilesets from `assets/tiles/{id}.png` with optional
+//! `assets/tiles/{id}.json` (`tile_size`; square 4×4 sheets infer 32 or 16 from dimensions when JSON is missing).
+//! Optional dialogue portraits: `assets/npc/{id}.npc/portrait.png`, then `assets/characters/{id}/portrait.png` (player).
 
 use std::collections::{HashMap, HashSet};
 use std::path::PathBuf;
@@ -242,13 +243,13 @@ pub fn resolve_door_prop_sheet_id(id: &str) -> Option<String> {
     first_existing_prop_folder(&legacy_candidates)
 }
 
-    /// Load a character sheet by id. Tries `assets/characters/{id}/`, `assets/npc/{id}.npc/`,
+    /// Load a character sheet by id. Tries `assets/npc/{id}.npc/`, `assets/characters/{id}/` (player),
     /// then `assets/props/{id}/` (including suffixed ids like `southHeavy.door` or `billyHouse.prop`).
     /// Returns None if sheet.png is missing.
 pub fn load_character_sheet(id: &str) -> Option<LoadedSheet> {
     let dirs = [
-        character_dir(id),
         assets_dir().join("npc").join(format!("{}.npc", id)),
+        character_dir(id),
         props_dir(id),
     ];
     for dir in &dirs {
@@ -291,15 +292,13 @@ pub fn dialogue_portrait_asset_key(npc_id: &str) -> String {
     format!("{npc_id}__dialogue_portrait")
 }
 
-/// Cache key for a skill icon image (`assets/skills/{id}.skill_image.png`).
+/// Cache key for a skill icon image (`assets/skills/{id}.skill/skill_image.png`).
 pub fn skill_image_key(skill_id: &str) -> String {
     format!("skill_icon:{skill_id}")
 }
 
 fn load_skill_image(skill_id: &str) -> Option<LoadedSheet> {
-    let path = assets_dir()
-        .join("skills")
-        .join(format!("{skill_id}.skill_image.png"));
+    let path = crate::paths::skill_asset_dir(skill_id).join("skill_image.png");
     let (pixels, width, height) = load_png(&path)?;
     if width == 0 || height == 0 {
         return None;
@@ -315,7 +314,7 @@ fn load_skill_image(skill_id: &str) -> Option<LoadedSheet> {
     })
 }
 
-/// Load optional dialogue portrait: tries `assets/npc/{id}.npc/portrait.png` then `assets/characters/{id}/portrait.png`.
+/// Load optional dialogue portrait: tries `assets/npc/{id}.npc/portrait.png` then `assets/characters/{id}/portrait.png` (e.g. player).
 /// Whole image is one frame (`rows`/`cols` = 1).
 pub fn load_dialogue_portrait(id: &str) -> Option<LoadedSheet> {
     let paths = [
@@ -368,7 +367,7 @@ impl AssetStore {
         self.sheets.get(id)
     }
 
-    /// Icon image for a skill, from `assets/skills/{id}.skill_image.png`. Cached; None if missing.
+    /// Icon image for a skill, from `assets/skills/{id}.skill/skill_image.png`. Cached; None if missing.
     pub fn get_skill_image(&mut self, skill_id: &str) -> Option<&LoadedSheet> {
         let key = skill_image_key(skill_id);
         if !self.sheets.contains_key(&key) {

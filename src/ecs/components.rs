@@ -47,7 +47,7 @@ pub struct Sprite {
 }
 
 /// Character or prop sprite sheet by id. Renderer loads via [`crate::assets::load_character_sheet`]
-/// (`assets/characters/`, `assets/npc/{id}.npc/`, `assets/props/{id}/`, including `.prop` / `.door`
+/// (`assets/npc/{id}.npc/`, `assets/characters/{id}/` for player, `assets/props/{id}/`, including `.prop` / `.door`
 /// suffixed ids); falls back to Sprite color if missing.
 #[derive(Debug, Clone)]
 pub struct SpriteSheet {
@@ -90,7 +90,7 @@ pub struct MapProp {
 
 /// Overworld NPC: proximity in [`crate::state::overworld`] can start dialogue.
 ///
-/// - `id` — same string as the map’s `npc.json` entry (folder `assets/npc/{id}.npc/`, sheet `assets/characters/{id}/`).
+/// - `id` — same string as the map’s `npc.json` entry (`assets/npc/{id}.npc/` for config + sheet/portrait).
 /// - `conversation_id` — stem of `assets/dialogue/{conversation_id}.json` (from merged [`crate::config::NpcConfig`]).
 #[derive(Debug, Clone)]
 pub struct Npc {

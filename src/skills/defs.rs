@@ -1,4 +1,4 @@
-//! Skill definitions deserialized from `assets/skills/{id}.json`.
+//! Skill definitions deserialized from `assets/skills/{id}.skill/config.json`.
 
 use serde::Deserialize;
 
@@ -47,11 +47,9 @@ pub struct SkillDef {
 }
 
 impl SkillDef {
-    /// Load one skill from `assets/skills/{id}.json`.
+    /// Load one skill from `assets/skills/{id}.skill/config.json`.
     pub fn load(id: &str) -> Result<Self, String> {
-        let path = crate::paths::asset_root()
-            .join("skills")
-            .join(format!("{}.json", id));
+        let path = crate::paths::skill_asset_dir(id).join("config.json");
         let raw = std::fs::read_to_string(&path)
             .map_err(|e| format!("skills: read {}: {}", path.display(), e))?;
         let def: SkillDef = serde_json::from_str(&raw)

@@ -527,7 +527,7 @@ fn main() {
     let mut world = World::new();
     ecs::setup_world(&mut world, &map_data, map_data.player_start, None);
 
-    let skill_registry = skills::SkillRegistry::load_builtins().expect("load assets/skills/*.json");
+    let skill_registry = skills::SkillRegistry::load_builtins().expect("load assets/skills/{id}.skill/");
 
     if game_config.seed_demo_backpack {
         skills::seed_demo_backpack(&mut world, &skill_registry).expect("seed backpack");

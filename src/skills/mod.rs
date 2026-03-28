@@ -1,4 +1,4 @@
-//! Data-driven skills: JSON under `assets/skills/`, effect steps with explicit targets (`caster` / `opponent`).
+//! Data-driven skills: `assets/skills/{id}.skill/config.json` (weapons = `subcategory: "weapon"`), effect steps with explicit targets (`caster` / `opponent`).
 //!
 //! See [`defs::SkillDef`] and [`apply::apply_skill`].
 

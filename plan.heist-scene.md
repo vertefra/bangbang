@@ -28,8 +28,8 @@ files_to_read:
 context: |
   Create pixel art for Silas, a scrappy thief character in a dusty Western setting.
   Target paths:
-    - assets/characters/silas/sheet.png   (walk sheet, same convention as existing characters)
-    - assets/characters/silas/portrait.png (dialogue portrait, same size convention)
+    - assets/npc/silas.npc/sheet.png   (walk sheet; same folder as config.json)
+    - assets/npc/silas.npc/portrait.png (dialogue portrait, same size convention)
   Follow all conventions in ASSET_STYLE_GUIDE.md exactly (palette, size, format).
   Update ASSET_STYLE_GUIDE.md if any new convention is introduced.
   Do NOT create NPC config files (step S5 handles those).
@@ -48,8 +48,8 @@ files_to_read:
 context: |
   Create pixel art for the Bank Owner — a flustered, rotund saloon-era banker.
   Target paths:
-    - assets/characters/bankOwner/sheet.png
-    - assets/characters/bankOwner/portrait.png
+    - assets/npc/bankOwner.npc/sheet.png
+    - assets/npc/bankOwner.npc/portrait.png
   Follow ASSET_STYLE_GUIDE.md conventions exactly.
   Update ASSET_STYLE_GUIDE.md if any new convention is introduced.
   Do NOT create NPC config files (step S5 handles those).
@@ -67,9 +67,9 @@ files_to_read:
 
 context: |
   Create a 96×96 pixel art skill icon for "Rusty Peacemaker" — an old, worn revolver.
-  Target path: assets/skills/rustyPeacemaker.skill_image.png
+  Target path: assets/skills/rustyPeacemaker.skill/skill_image.png
   Follow ASSET_STYLE_GUIDE.md skill icon conventions exactly (same palette/size as
-  sidearm.skill_image.png and beer.skill_image.png for reference).
+  sidearm.skill/skill_image.png and beer.skill/skill_image.png for reference).
   Update ASSET_STYLE_GUIDE.md if a new convention is introduced.
   Do NOT create the skill JSON (step S4 handles that).
   Return: the exact path written and any style decisions made.
@@ -158,8 +158,8 @@ files_to_read:
   - docs/npc.md
   - docs/skills.md
   - assets/npc/docSawbones.npc/config.json
-  - assets/skills/sidearm.json
-  - assets/skills/beer.json
+  - assets/skills/sidearm.skill/config.json
+  - assets/skills/beer.skill/config.json
 
 context: |
   Three data files to create:
@@ -172,9 +172,9 @@ context: |
   **assets/npc/bankOwner.npc/config.json**
   Same format. The Bank Owner only appears in scene dialogue steps, not as a world NPC.
 
-  **assets/skills/rustyPeacemaker.json**
+  **assets/skills/rustyPeacemaker.skill/config.json**
   A permanent weapon skill (subcategory: "weapon"). Effects: deal_damage to opponent,
-  amount slightly higher than sidearm (sidearm = reference — check assets/skills/sidearm.json
+  amount slightly higher than sidearm (sidearm = reference — check assets/skills/sidearm.skill/config.json
   for its amount). Rusty Peacemaker is the first story-earned gun; it can be equal to or
   slightly stronger than sidearm. No charges_default (permanent). Id must be "rustyPeacemaker"
   (matches the skill_image path from S3).
