@@ -98,6 +98,16 @@ pub struct Npc {
     pub conversation_id: String,
 }
 
+/// Cutscene-only character: drawn in the world during [`crate::state::AppState::Scene`] (no dialogue proximity).
+#[derive(Debug, Clone, Copy)]
+pub struct SceneActor;
+
+/// World-space velocity (units/sec) for a cutscene actor. [`Vec2::ZERO`] = stand still (e.g. Bank Owner).
+#[derive(Debug, Clone, Copy)]
+pub struct SceneActorMotion {
+    pub velocity: Vec2,
+}
+
 // -----------------------------------------------------------------------------
 // Facing (for sprite sheet row / direction)
 // -----------------------------------------------------------------------------

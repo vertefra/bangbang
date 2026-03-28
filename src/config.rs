@@ -116,6 +116,19 @@ fn default_color() -> [f32; 4] {
     [0.2, 0.6, 1.0, 1.0]
 }
 
+/// One scene proximity trigger in `assets/maps/{id}.map/scenes.json`.
+///
+/// When the player is within `trigger_radius` world units of `trigger_position`, the named
+/// scene starts. `require_not_flag` gates repeat plays: if the flag is set the trigger is skipped.
+#[derive(Debug, Clone, serde::Deserialize)]
+pub struct MapSceneTrigger {
+    pub scene_id: String,
+    pub trigger_position: [f32; 2],
+    pub trigger_radius: f32,
+    #[serde(default)]
+    pub require_not_flag: Option<String>,
+}
+
 /// Top-level game bootstrap: `assets/game.json`.
 #[derive(Debug, Clone, Deserialize)]
 pub struct GameConfig {

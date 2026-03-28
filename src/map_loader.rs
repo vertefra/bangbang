@@ -20,14 +20,14 @@
 //! Required `tile_palette` in `map.json` loads `assets/tile_palettes/{id}.json` (`color` + `walkable` per tile id).
 
 use crate::assets::LoadedSheet;
-use crate::config::{CharacterNpcConfig, MapDoor, MapNpcEntry, MapPropEntry, NpcConfig};
+use crate::config::{CharacterNpcConfig, MapDoor, MapNpcEntry, MapPropEntry, MapSceneTrigger, NpcConfig};
 use crate::map::Tilemap;
 use serde::Deserialize;
 use std::path::PathBuf;
 
 const DEFAULT_PLAYER_START: [f32; 2] = [160.0, 160.0];
 
-/// Everything needed to apply a map: tilemap, NPCs, props, doors, and default player spawn.
+/// Everything needed to apply a map: tilemap, NPCs, props, doors, scene triggers, and default player spawn.
 #[derive(Debug, Clone)]
 pub struct MapData {
     pub tilemap: Tilemap,
@@ -37,6 +37,8 @@ pub struct MapData {
     /// by convention, with legacy folder fallback.
     pub props: Vec<MapPropEntry>,
     pub doors: Vec<MapDoor>,
+    /// Scene proximity triggers from `scenes.json`. Missing file → empty (not an error).
+    pub scene_triggers: Vec<MapSceneTrigger>,
     pub player_start: [f32; 2],
     pub tileset: Option<LoadedSheet>,
 }
@@ -182,13 +184,14 @@ impl std::error::Error for MapLoadError {
     }
 }
 
-/// Load map by id. Reads `map.json`, optional `npc.json`, and optional `doors.json` under `assets/maps/{id}.map/`.
+/// Load map by id. Reads `map.json`, optional `npc.json`, optional `doors.json`, and optional `scenes.json` under `assets/maps/{id}.map/`.
 pub fn load_map(id: &str) -> Result<MapData, MapLoadError> {
     let dir = map_dir(id);
     let map_path = dir.join("map.json");
     let npc_path = dir.join("npc.json");
     let props_path = dir.join("props.json");
     let doors_path = dir.join("doors.json");
+    let scenes_path = dir.join("scenes.json");
 
     let map_data =
         std::fs::read_to_string(&map_path).map_err(|e| MapLoadError::Io(e, map_path.clone()))?;
@@ -237,11 +240,19 @@ pub fn load_map(id: &str) -> Result<MapData, MapLoadError> {
         Err(_) => Vec::new(),
     };
 
+    let scene_triggers = match std::fs::read_to_string(&scenes_path) {
+        Ok(data) => serde_json::from_str::<Vec<MapSceneTrigger>>(&data)
+            .map_err(|e| MapLoadError::Json(e, scenes_path.clone()))?,
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => Vec::new(),
+        Err(e) => return Err(MapLoadError::Io(e, scenes_path.clone())),
+    };
+
     Ok(MapData {
         tilemap,
         npcs,
         props,
         doors,
+        scene_triggers,
         player_start: m.player_start.unwrap_or(DEFAULT_PLAYER_START),
         tileset,
     })
@@ -271,6 +282,13 @@ fn load_npcs_from_map(entries: &[MapNpcEntry]) -> Result<Vec<(String, NpcConfig)
 }
 
 /// Load [`CharacterNpcConfig`] for `id`: `assets/npc/{id}.npc/config.json` first, else `assets/npc/{id}.npc.json` (legacy; logs deprecation).
+///
+/// Public for scene actors and tools that are not placed via map `npc.json`.
+pub fn load_character_npc_config(id: &str) -> Result<CharacterNpcConfig, MapLoadError> {
+    let npc_dir = crate::paths::asset_root().join("npc");
+    load_character_npc(&npc_dir, id)
+}
+
 fn load_character_npc(
     npc_dir: &std::path::Path,
     id: &str,

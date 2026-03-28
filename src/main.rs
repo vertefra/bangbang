@@ -10,7 +10,7 @@ use std::sync::Arc;
 use std::time::Instant;
 
 use bangbang::constants::{
-    DOOR_TRANSITION_COOLDOWN_SECS, OVERWORLD_TOAST_DURATION_SECS,
+    DOOR_TRANSITION_COOLDOWN_SECS, OVERWORLD_TOAST_DURATION_SECS, SCENE_TRIGGER_COOLDOWN_SECS,
 };
 use bangbang::render;
 use bangbang::ui::{self, BackpackPanelLines};
@@ -37,10 +37,11 @@ struct GameState {
     fps_smoothed: f32,
 }
 
-/// Current map id, tile data, doors, and door-transition scratch state.
+/// Current map id, tile data, doors, scene triggers, and door-transition scratch state.
 struct MapContext {
     current_map_id: String,
     doors: Vec<bangbang::config::MapDoor>,
+    scene_triggers: Vec<bangbang::config::MapSceneTrigger>,
     door_cooldown: f32,
     prev_door_overlap: Option<usize>,
     tilemap: Option<map::Tilemap>,
@@ -57,12 +58,13 @@ struct RenderConfig {
     window_title: String,
 }
 
-/// Loaded theme, dialogue cache, skills, and GPU asset store.
+/// Loaded theme, dialogue cache, skills, scene cache, and GPU asset store.
 struct Resources {
     asset_store: assets::AssetStore,
     ui_theme: ui::UiTheme,
     dialogue_cache: bangbang::dialogue::ConversationCache,
     skill_registry: skills::SkillRegistry,
+    scene_cache: bangbang::scene::SceneCache,
 }
 
 /// Ephemeral UI derived state (not persisted across maps).
@@ -179,14 +181,66 @@ impl ApplicationHandler for App {
                     self.game.fps_smoothed = self.game.fps_smoothed * 0.9 + inst * 0.1;
                 }
 
+                // Extract Scene state as owned values before any further borrows.
+                let scene_display: Option<(String, usize, u32, u32)> =
+                    if let AppState::Scene {
+                        scene_id,
+                        step,
+                        line_index,
+                        stream_visible,
+                        ..
+                    } = &self.game.app_state
+                    {
+                        Some((scene_id.clone(), *step, *line_index, *stream_visible))
+                    } else {
+                        None
+                    };
+
                 let dialogue = self
                     .game
                     .app_state
                     .dialogue_display_text(&mut self.resources.dialogue_cache);
-                let dialogue_npc_id = match &self.game.app_state {
-                    AppState::Dialogue { npc_id, .. } => Some(npc_id.as_str()),
+                let dialogue_npc_id_owned: Option<String> = match &self.game.app_state {
+                    AppState::Dialogue { npc_id, .. } => Some(npc_id.clone()),
                     _ => None,
                 };
+
+                // Scene: portrait id + typewriter text. Cache hit — scene was loaded in update().
+                let scene_dialogue: Option<(Option<String>, String)> =
+                    scene_display.and_then(|(scene_id, step, line_index, stream_visible)| {
+                        self.resources
+                            .scene_cache
+                            .get_or_load(&scene_id)
+                            .ok()
+                            .and_then(|scene_def| {
+                                if let bangbang::scene::SceneStep::Dialogue {
+                                    portrait,
+                                    speaker,
+                                    lines,
+                                    ..
+                                } = scene_def.steps.get(step)?
+                                {
+                                    let line = lines.get(line_index as usize)?;
+                                    let display: String =
+                                        line.chars().take(stream_visible as usize).collect();
+                                    let portrait_for_ui = portrait
+                                        .as_deref()
+                                        .filter(|s| !s.is_empty())
+                                        .map(std::string::ToString::to_string)
+                                        .or_else(|| {
+                                            Some(bangbang::ecs::speaker_to_asset_id(speaker))
+                                        });
+                                    Some((portrait_for_ui, display))
+                                } else {
+                                    None
+                                }
+                            })
+                    });
+
+                let dialogue_npc_id: Option<&str> = scene_dialogue
+                    .as_ref()
+                    .and_then(|(p, _)| p.as_deref())
+                    .or(dialogue_npc_id_owned.as_deref());
                 let backpack_open = match self.game.app_state {
                     AppState::Overworld { backpack_open, .. } => backpack_open,
                     _ => false,
@@ -230,7 +284,10 @@ impl ApplicationHandler for App {
                         font: self.render.font_scale,
                     },
                     ui: bangbang::gpu::UiFrameState {
-                        dialogue_message: dialogue.as_deref(),
+                        dialogue_message: scene_dialogue
+                            .as_ref()
+                            .map(|(_, d)| d.as_str())
+                            .or(dialogue.as_deref()),
                         dialogue_npc_id,
                         overworld_toast,
                         backpack_open,
@@ -281,6 +338,7 @@ impl App {
         ecs::despawn_all_entities(&mut self.game.world);
         ecs::setup_world(&mut self.game.world, &map_data, door.spawn, Some(carry));
         self.map.doors = map_data.doors.clone();
+        self.map.scene_triggers = map_data.scene_triggers.clone();
         self.map.tilemap = Some(map_data.tilemap);
         self.map.tileset = map_data.tileset;
         self.map.current_map_id = door.to_map.clone();
@@ -289,6 +347,7 @@ impl App {
         self.game.app_state = AppState::Overworld {
             last_near_npc: false,
             backpack_open: false,
+            scene_trigger_cooldown: SCENE_TRIGGER_COOLDOWN_SECS,
         };
     }
 
@@ -301,6 +360,7 @@ impl App {
         )?;
         self.map.current_map_id = data.map_id;
         self.map.doors = map_data.doors.clone();
+        self.map.scene_triggers = map_data.scene_triggers.clone();
         self.map.tilemap = Some(map_data.tilemap);
         self.map.tileset = map_data.tileset;
         self.map.door_cooldown = DOOR_TRANSITION_COOLDOWN_SECS;
@@ -308,6 +368,7 @@ impl App {
         self.game.app_state = AppState::Overworld {
             last_near_npc: false,
             backpack_open: true,
+            scene_trigger_cooldown: SCENE_TRIGGER_COOLDOWN_SECS,
         };
         if let Some(p) = skills::player_entity(&self.game.world) {
             if let Ok(mut b) = self.game.world.get::<&mut ecs::Backpack>(p) {
@@ -336,6 +397,8 @@ impl App {
             tilemap,
             &self.resources.skill_registry,
             &mut self.resources.dialogue_cache,
+            &self.map.scene_triggers,
+            &mut self.resources.scene_cache,
         );
 
         if !matches!(
@@ -487,6 +550,7 @@ fn main() {
         map: MapContext {
             current_map_id: game_config.start_map.clone(),
             doors: map_data.doors.clone(),
+            scene_triggers: map_data.scene_triggers.clone(),
             door_cooldown: 0.0,
             prev_door_overlap: None,
             tilemap: Some(map_data.tilemap),
@@ -505,6 +569,7 @@ fn main() {
             ui_theme,
             dialogue_cache: bangbang::dialogue::ConversationCache::new(),
             skill_registry,
+            scene_cache: bangbang::scene::SceneCache::new(),
         },
         ui: TransientUi {
             backpack_lines: None,

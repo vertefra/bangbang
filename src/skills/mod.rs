@@ -9,7 +9,7 @@ mod defs;
 mod registry;
 
 pub use apply::{apply_skill, nearest_opponent_entity, player_entity};
-pub use backpack_runtime::{apply_backpack_hotkey, cycle_equipped_weapon, seed_demo_backpack};
+pub use backpack_runtime::{apply_backpack_hotkey, cycle_equipped_weapon, give_skill, seed_demo_backpack};
 pub use backpack_view::{
     cycle_equipped_weapon_in_backpack, is_weapon_skill, normalize_equipped_weapon,
     passive_ids_in_order, weapon_ids_in_order,

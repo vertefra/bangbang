@@ -46,6 +46,35 @@ pub fn cycle_equipped_weapon(world: &mut World, registry: &SkillRegistry, delta:
     cycle_equipped_weapon_in_backpack(&mut backpack, registry, delta);
 }
 
+/// Grant a skill to the player by id. Idempotent — does not add duplicates to `permanent`.
+/// Auto-equips the skill if it is a weapon and no weapon is currently equipped.
+pub fn give_skill(
+    world: &mut World,
+    registry: &SkillRegistry,
+    skill_id: &str,
+) -> Result<(), String> {
+    let def = registry
+        .get(skill_id)
+        .ok_or_else(|| format!("give_skill: unknown skill '{skill_id}'"))?;
+
+    let player = player_entity(world)
+        .ok_or_else(|| "give_skill: no Player entity in world".to_string())?;
+
+    let mut backpack = world
+        .get::<&mut Backpack>(player)
+        .map_err(|_| "give_skill: player has no Backpack component".to_string())?;
+
+    if !backpack.permanent.iter().any(|id| id == skill_id) {
+        backpack.permanent.push(skill_id.to_string());
+    }
+
+    if def.subcategory == "weapon" && backpack.equipped_weapon_id.is_none() {
+        backpack.equipped_weapon_id = Some(skill_id.to_string());
+    }
+
+    Ok(())
+}
+
 /// Backpack open: **1** = use equipped weapon skill (damage nearest NPC in range).
 /// **2** = use first usable skill (beer → heal self, consume one charge).
 pub fn apply_backpack_hotkey(world: &mut World, registry: &SkillRegistry, digit: u8) {

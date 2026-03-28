@@ -10,6 +10,7 @@ Each map lives in a folder named `{id}.map` (for example `mumhome.secondFloor.ma
 | `npc.json` | List of NPC instances (id + world position); character data comes from `assets/npc/` |
 | `props.json` | Optional static props (buildings, large objects): `id` + world `position`; art in `assets/props/{id}.prop/` by convention. Omitted or empty = none. |
 | `doors.json` | Optional list of map transitions (world-space rects → target map + spawn). Omitted or empty = no doors. |
+| `scenes.json` | Optional list of proximity-based scene triggers (`MapSceneTrigger`). Omitted or empty = no scene triggers. |
 
 ## `map.json` fields
 
@@ -137,10 +138,27 @@ A door is **not** a special tile in the renderer: collision stays palette-based.
 
 **Runtime:** `MapData` includes `doors: Vec<MapDoor>` (`config::MapDoor`, includes optional `prop`, optional `require_state` / `deny_message`) and `props: Vec<MapPropEntry>`. The game binary’s `App::update` (Overworld, backpack closed) calls `state::map_transition::poll_map_door_transition` with `WorldState`. On **transition**: `take_player_carryover` → `despawn_all_entities` → `load_map` → `setup_world` with door `spawn` and preserved **Backpack** + **Health** (`ecs/world.rs`). On **blocked** gate: no transition and no transition cooldown; the player can step away and retry. After the post-transition **cooldown** (`DOOR_TRANSITION_COOLDOWN_SECS`), overlap memory is seeded from the player’s current position so if the **`spawn` lies inside a walk-through door rect** on the destination map, the game does not immediately treat that as a new entry. Constants: `DOOR_TRANSITION_COOLDOWN_SECS`, `OVERWORLD_TOAST_DURATION_SECS` in `constants.rs`.
 
+## `scenes.json` (scene triggers)
+
+Optional JSON **array**. If the file is **missing**, the map has no scene triggers. If **invalid JSON**, `load_map` fails with `MapLoadError`.
+
+Each entry defines a proximity-based trigger that auto-fires a data-driven scene when the player walks into range.
+
+| Field | Type | Default | Role |
+|-------|------|---------|------|
+| `scene_id` | string | (required) | Scene definition id. Resolved to `assets/scenes/{scene_id}.scene.json`. |
+| `trigger_position` | `[x, y]` | (required) | World position of the trigger center. |
+| `trigger_radius` | number | (required) | Trigger fires when player distance ≤ this value (world units). |
+| `require_not_flag` | string | omitted | If set, trigger only fires if this `WorldState` flag is **not** set. Use to make scenes once-only. |
+
+Scenes are loaded on demand from `assets/scenes/{id}.scene.json` via `SceneCache` in `src/scene/`. A `SetFlag` step in the scene can gate it to play once only by writing a flag that `require_not_flag` checks. Missing scene file logs an error and returns to Overworld (no crash).
+
+**Runtime:** `MapData` includes `scene_triggers: Vec<MapSceneTrigger>` (`config::MapSceneTrigger`). `update_overworld` checks player distance each frame (gated by `scene_trigger_cooldown`) and transitions to `AppState::Scene` when a trigger fires. `SCENE_TRIGGER_COOLDOWN_SECS` in `constants.rs` prevents re-entry immediately after a scene ends.
+
 ## Related
 
 - NPC character files, dialogue ids, and runtime merge: [npc.md](npc.md).
 - Rendering behavior with tilesets and wang autotile: [architecture.md](architecture.md), `src/render/mod.rs`.
-- Loader implementation: `src/map_loader.rs`, `src/map.rs`, `src/config.rs` (`MapNpcEntry`, `MapPropEntry`, `MapDoor`).
+- Loader implementation: `src/map_loader.rs`, `src/map.rs`, `src/config.rs` (`MapNpcEntry`, `MapPropEntry`, `MapDoor`, `MapSceneTrigger`).
 - Overworld proximity / interact: `src/constants.rs` (`NPC_INTERACT_RANGE`), `src/state/overworld.rs`, `src/state/app.rs`.
 - Doors: `src/state/map_transition.rs`, `src/main.rs` (`apply_map_transition`); door sprites: `ecs/world.rs` (`DoorMarker`). Props: `ecs/world.rs` (`MapProp`); sheets: `assets.rs` (`load_character_sheet`).

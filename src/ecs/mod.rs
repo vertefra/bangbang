@@ -12,7 +12,11 @@ pub mod world;
 
 pub use components::{
     AnimationKind, AnimationState, Backpack, Direction, DoorMarker, Facing, Health, MapProp, Npc,
-    Player, Sprite, SpriteSheet, Transform, UsableSkillStack,
+    Player, SceneActor, SceneActorMotion, Sprite, SpriteSheet, Transform, UsableSkillStack,
 };
 pub use hecs::World;
-pub use world::{despawn_all_entities, setup_world, take_player_carryover, PlayerCarryover};
+pub use world::{
+    despawn_all_entities, despawn_scene_actors, face_scene_actors, setup_world, speaker_to_asset_id,
+    sync_scene_actor_for_step, take_player_carryover, tick_scene_actor_animations,
+    tick_scene_actor_motion, PlayerCarryover,
+};

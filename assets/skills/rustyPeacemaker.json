@@ -1,0 +1,9 @@
+{
+  "id": "rustyPeacemaker",
+  "name": "Rusty Peacemaker",
+  "category": "permanent",
+  "subcategory": "weapon",
+  "effects": [
+    { "op": "deal_damage", "target": "opponent", "amount": 3 }
+  ]
+}
