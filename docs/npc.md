@@ -6,8 +6,8 @@ NPCs are **data-driven** in two places: **where** they appear (per map) and **ho
 
 1. Add **`assets/npc/{id}.npc/config.json`** with `scale`, `color`, and optionally `conversation_id` (see below).
 2. Add **`assets/dialogue/{conversation_id}.json`** if you want scripted dialogue. If `conversation_id` is omitted in config, it defaults to **`{id}`** (same string as the map entry’s `id`).
-3. Optionally add **`assets/characters/{id}/sheet.png`** for art. The renderer uses `SpriteSheet.character_id` = map `id`; if the sheet is missing, the NPC draws as a solid `Sprite.color` quad.
-4. Optionally add a **dialogue portrait** PNG: **`assets/npc/{id}.npc/portrait.png`** (or **`assets/characters/{id}/portrait.png`**). If present, it is shown in the dialogue box when talking to that NPC. If there is no portrait file but a **`sheet.png`** exists, the dialogue UI falls back to the **idle “down”** frame of the walk sheet. If neither exists, dialogue text is unchanged (no portrait).
+3. Optionally add **`assets/characters/{id}/sheet.png`** for art (or **`assets/npc/{id}.npc/sheet.png`** — same loader). The renderer uses `SpriteSheet.character_id` = map `id`; if the sheet is missing, the NPC draws as a solid `Sprite.color` quad. For **4-direction** PixelLab characters, stack rotation PNGs in **sheet row order** matching [`facing_sprite_row`](../src/render/mod.rs): **down → up → left → right** (PixelLab south, north, west, east), with **`sheet.json`** `rows` / `cols` set accordingly (e.g. `docSawbones`: 4×1).
+4. Optionally add a **dialogue portrait** PNG: **`assets/npc/{id}.npc/portrait.png`** (or **`assets/characters/{id}/portrait.png`**). If present, it is shown in the dialogue box when talking to that NPC. Prefer a **head-and-shoulders bust** (same idea as **`mom`**: **128×128** RGBA) so the left slot reads as a portrait, not a tiny full-body sprite. If there is no portrait file but a **`sheet.png`** exists, the dialogue UI falls back to the **idle “down”** frame of the walk sheet. If neither exists, dialogue text is unchanged (no portrait).
 5. List the NPC in **`assets/maps/{map}.map/npc.json`**: `{ "id": "{id}", "position": [x, y] }` in world units (same as `player_start`). See [maps.md — `npc.json`](maps.md#npcjson).
 
 ## Map placement: `npc.json`
@@ -29,7 +29,7 @@ Parsed as [`CharacterNpcConfig`](../src/config.rs) (`serde` ignores unknown keys
 
 | Field | Type | Default | Role |
 |-------|------|---------|------|
-| `scale` | `[sx, sy]` | `[0.5, 0.5]` | `Transform.scale` on the NPC entity (affects drawn size with sheet or fallback quad). |
+| `scale` | `[sx, sy]` | `[0.5, 0.5]` | `Transform.scale` on the NPC entity (affects drawn size with sheet or fallback quad). **World size** ≈ frame size × scale (see [`assets/ASSET_STYLE_GUIDE.md`](../assets/ASSET_STYLE_GUIDE.md) — *World scale*). The player uses **48×48** frames at scale **1.0**; match that (e.g. **48×48** art + `[1.0, 1.0]`, or **96×96** + `[0.5, 0.5]`). |
 | `color` | `[r, g, b, a]` RGBA 0–1 | `[0.2, 0.6, 1.0, 1.0]` | `Sprite.color` (tint / solid fill when no character sheet). |
 | `conversation_id` | string or omitted | NPC **`id`** from `npc.json` | Base name of `assets/dialogue/{conversation_id}.json`. Use when one script is shared by multiple map entries or ids. |
 

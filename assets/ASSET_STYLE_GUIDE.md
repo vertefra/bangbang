@@ -58,6 +58,13 @@ Palette is limited and shared across tiles, characters, and props for a cohesive
 - **Animation**: Idle + walk (4 or 8 directions if needed). Frame count and layout per `sheet.json` (rows/cols).
 - **Consistency**: Same pixel scale as tiles; same outline style (all with or all without).
 
+### World scale (player, NPCs, PixelLab)
+The overworld draws each frame at **world size** ≈ **`frame_width` × `scale.x`** and **`frame_height` × `scale.y`**, where **`scale`** comes from **`assets/npc/{id}.npc/config.json`** (see [docs/npc.md](../docs/npc.md)). The **player** uses **48×48** px frames at **`scale` 1.0** — that is the **reference** for human-scale actors on the ground.
+
+- **Match NPCs to the player**: use **~48×48** frames with **`"scale": [1.0, 1.0]`** (same as `mom`, `bandit`), **or** larger source art with a **smaller** scale so the product stays ~48 px tall. Example: PixelLab **`create_character`** with **`size`: 96** → set **`"scale": [0.5, 0.5]`** so \(96 × 0.5 = 48\) world pixels wide per frame.
+- **Rule of thumb**: \(\texttt{scale} \approx 48 / \texttt{frame\_width}\) when you want the same on-screen height as the player (adjust for deliberate tall/short characters).
+- **Tiles**: Map cells are often **32** px; a ~**48** px-tall character reads as “one figure” next to buildings — avoid shipping **96×96** frames at **`scale` 1.0** unless you intentionally want a giant.
+
 ## Prop and asset ids (naming)
 - **Reuse generic ids** for furniture, clutter, and anything that could appear in multiple interiors or towns: `bed`, `table`, `dresser`, `stove`, `cactus`, `barrels` — not character- or quest-tied names like `mumBed`.
 - **Named landmark props** (unique buildings tied to one place) may use a descriptive id (`billyHouse`, `dustfallSaloon`) when a generic name would be misleading. When in doubt for small reusable props, stay generic even if only one map references them today.
@@ -68,6 +75,7 @@ Palette is limited and shared across tiles, characters, and props for a cohesive
 ## File layout
 - **Characters**: `assets/characters/{id}/` — `sheet.png`, `sheet.json`.
 - **NPCs**: `assets/npc/{id}.npc/` or `assets/npc/{id}.npc.json` plus sprites as referenced.
+- **Dialogue portraits** (`assets/npc/{id}.npc/portrait.png`): optional **bust** image for the dialogue panel (see [docs/npc.md](../docs/npc.md)). **128×128** RGBA matches existing **`mom`**; avoid reusing the overworld **down** frame as the portrait—it reads as a miniature full-body icon. PixelLab **`create_map_object`** (e.g. **128×128**, description: head-and-shoulders, transparent bg) is a workable fit for character busts.
 - **Tiles**: `assets/tiles/` (or per-map tile sets as used by map loader).
 - **Maps**: `assets/maps/{id}.map/` — `map.json`, `npc.json`, optional `props.json`; art in same folder or shared tiles.
 - **Props (buildings, large objects)**: `assets/props/{id}.prop/` — `sheet.png`, `sheet.json` (grid). Referenced from map `props.json` by `id`. Use **generic** functional names for reusable props (`bed`, `dresser`); camelCase for multi-word ids (`billyHouse` for a named structure only when it is a specific landmark).
